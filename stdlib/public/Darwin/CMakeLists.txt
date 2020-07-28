@@ -14,13 +14,18 @@ if(SWIFT_BUILD_STATIC_SDK_OVERLAY)
 endif()
 
 set(all_overlays
-  CoreFoundation
   CoreGraphics
   Dispatch
   Foundation
   ObjectiveC
   XCTest
 )
+
+if(SWIFT_BUILD_FOUNDATION_OVERLAY)
+  list(APPEND all_overlays
+    CoreFoundation
+  )
+endif()
 
 if(DEFINED SWIFT_OVERLAY_TARGETS)
   set(overlays_to_build ${SWIFT_OVERLAY_TARGETS})
