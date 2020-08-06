@@ -437,7 +437,6 @@ _Block_release(void) { }\n")
               ${LIT_ARGS}
               "--param" "swift_test_subset=${test_subset}"
               "--param" "swift_test_mode=${test_mode}"
-              "--param" "swift_build_foundation_overlay=${SWIFT_BUILD_FOUNDATION_OVERLAY}"
               ${SWIFT_LIT_TEST_PATHS}
             DEPENDS ${dependencies}
             COMMENT "Running ${test_subset} Swift tests for ${VARIANT_TRIPLE} from custom test locations"
