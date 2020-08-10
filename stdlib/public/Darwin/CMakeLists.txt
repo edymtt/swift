@@ -21,7 +21,7 @@ set(all_overlays
   XCTest
 )
 
-if(SWIFT_BUILD_FOUNDATION_OVERLAY)
+if(NOT SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
   list(APPEND all_overlays
     CoreFoundation
   )
@@ -38,4 +38,12 @@ foreach(overlay ${overlays_to_build})
   message(STATUS "INCLUDING OVERLAY: ${overlay}")
   add_subdirectory(${overlay})
 endforeach()
-message(STATUS "Foundation overlay from repo: ${SWIFT_BUILD_FOUNDATION_OVERLAY}")
+message(STATUS "Experimental build for foundation overlay: ${SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD}")
+if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
+  #add CoreFoundation in a different way
+  include(FetchContent)
+  FetchContent_Declare(CoreFoundation
+      SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CoreFoundation")
+
+  FetchContent_MakeAvailable(CoreFoundation)
+endif()

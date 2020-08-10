@@ -86,9 +86,6 @@ option(SWIFT_BUILD_STDLIB_EXTRA_TOOLCHAIN_CONTENT
     "If not building stdlib, controls whether to build 'stdlib/toolchain' content"
     TRUE)
 
-option(SWIFT_BUILD_FOUNDATION_OVERLAY
-    "Build Foundation/CoreFoundation overlay code present in Swift repo"
-    TRUE)
 
 # In many cases, the CMake build system needs to determine whether to include
 # a directory, or perform other actions, based on whether the stdlib or SDK is
@@ -410,6 +407,9 @@ option(SWIFT_ENABLE_EXPERIMENTAL_CONCURRENCY
   "Enable experimental Swift concurrency model"
   FALSE)
 
+option(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD
+    "Enable experimental build of CoreFoundation/Foundation overlay as if they were not part of the Swift repo"
+    OFF)
 #
 # End of user-configurable options.
 #
