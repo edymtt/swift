@@ -1,11 +1,25 @@
-variable_watch(COREFOUNDATION_OVERLAY_BUILT_STANDALONE)
 set(COREFOUNDATION_OVERLAY_BUILT_STANDALONE FALSE)
 if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
     set(COREFOUNDATION_OVERLAY_BUILT_STANDALONE TRUE)
 endif()
 
 if(COREFOUNDATION_OVERLAY_BUILT_STANDALONE OR SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
-    cmake_minimum_required(VERSION 3.12.4)
+    cmake_minimum_required(VERSION 3.15.1)
+    project(CoreFoundationOverlay LANGUAGES Swift C)
+
+    option(BUILD_SHARED_LIBS "Build shared libraries by default" YES)
+    add_library(swiftCoreFoundation
+        CoreFoundation.swift)
+    target_compile_options(swiftCoreFoundation
+        PRIVATE -module-name CoreFoundation)
+    
+
+    # FIXME: proper generatio of magic symbols
+    add_library(magic-symbols-for-install-name STATIC
+        "../../../../linker-support/magic-symbols-for-install-name.c")
+    target_compile_options(magic-symbols-for-install-name
+        PRIVATE "-DSWIFT_TARGET_LIBRARY_NAME=swiftCoreFoundation")
+    target_link_libraries(swiftCoreFoundation PRIVATE magic-symbols-for-install-name)
 else()
 
 cmake_minimum_required(VERSION 3.4.3)
