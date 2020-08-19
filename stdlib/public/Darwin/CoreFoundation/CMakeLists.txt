@@ -13,13 +13,17 @@ if(COREFOUNDATION_OVERLAY_BUILT_STANDALONE OR SWIFT_ENABLE_EXPERIMENTAL_FOUNDATI
     target_compile_options(swiftCoreFoundation
         PRIVATE -module-name CoreFoundation)
     
+    target_link_options(swiftCoreFoundation
+        PRIVATE -framework CoreFoundation)
 
     # FIXME: proper generatio of magic symbols
     add_library(magic-symbols-for-install-name STATIC
-        "../../../../linker-support/magic-symbols-for-install-name.c")
+        "${CMAKE_SOURCE_DIR}/../../../linker-support/magic-symbols-for-install-name.c")
     target_compile_options(magic-symbols-for-install-name
         PRIVATE "-DSWIFT_TARGET_LIBRARY_NAME=swiftCoreFoundation")
     target_link_libraries(swiftCoreFoundation PRIVATE magic-symbols-for-install-name)
+
+    install(TARGETS swiftCoreFoundation DESTINATION usr/lib/swift)
 else()
 
 cmake_minimum_required(VERSION 3.4.3)

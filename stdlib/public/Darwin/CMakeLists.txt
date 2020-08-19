@@ -41,9 +41,10 @@ endforeach()
 message(STATUS "Experimental build for foundation overlay: ${SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD}")
 if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
   #add CoreFoundation in a different way
-  include(FetchContent)
-  FetchContent_Declare(CoreFoundation
-      SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CoreFoundation")
+  include(ExternalProject)
+  FetchContent_Declare(CoreFoundationOverlay
+      SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CoreFoundation"
+      INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:STRING=<INSTALL_DIR>)
 
-  FetchContent_MakeAvailable(CoreFoundation)
 endif()
