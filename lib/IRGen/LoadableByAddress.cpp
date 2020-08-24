@@ -297,6 +297,7 @@ LargeSILTypeMapper::getNewSILFunctionType(GenericEnvironment *env,
   auto newFnType = SILFunctionType::get(
       fnType->getInvocationGenericSignature(),
       fnType->getExtInfo(),
+      fnType->isAsync(),
       fnType->getCoroutineKind(),
       fnType->getCalleeConvention(),
       newParams,
@@ -2361,6 +2362,7 @@ static bool rewriteFunctionReturn(StructLoweringState &pass) {
     auto NewTy = SILFunctionType::get(
         loweredTy->getSubstGenericSignature(),
         loweredTy->getExtInfo(),
+        loweredTy->isAsync(),
         loweredTy->getCoroutineKind(),
         loweredTy->getCalleeConvention(),
         loweredTy->getParameters(),
@@ -2862,7 +2864,7 @@ bool LoadableByAddress::recreateConvInstr(SILInstruction &I,
   case SILInstructionKind::LinearFunctionExtractInst: {
     auto instr = cast<LinearFunctionExtractInst>(convInstr);
     newInstr = convBuilder.createLinearFunctionExtract(
-        instr->getLoc(), instr->getExtractee(), instr->getFunctionOperand());
+        instr->getLoc(), instr->getExtractee(), instr->getOperand());
     break;
   }
   default:

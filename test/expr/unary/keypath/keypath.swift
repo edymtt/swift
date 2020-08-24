@@ -36,7 +36,7 @@ struct A: Hashable {
   func hash(into hasher: inout Hasher) { fatalError() }
 }
 struct B {}
-struct C<T> { // expected-note 3 {{'T' declared as parameter to type 'C'}}
+struct C<T> { // expected-note 4 {{'T' declared as parameter to type 'C'}}
   var value: T
   subscript() -> T { get { return value } }
   subscript(sub: Sub) -> T { get { return value } set { } }
@@ -224,15 +224,17 @@ func testKeyPathInGenericContext<H: Hashable, X>(hashable: H, anything: X) {
 }
 
 func testDisembodiedStringInterpolation(x: Int) {
-  \(x) // expected-error{{string interpolation}} expected-error{{}}
-  \(x, radix: 16) // expected-error{{string interpolation}} expected-error{{}}
+  \(x) // expected-error{{string interpolation can only appear inside a string literal}} 
+  \(x, radix: 16) // expected-error{{string interpolation can only appear inside a string literal}} 
 }
 
 func testNoComponents() {
   let _: KeyPath<A, A> = \A // expected-error{{must have at least one component}}
-  let _: KeyPath<C, A> = \C // expected-error{{must have at least one component}} expected-error{{}}
+  let _: KeyPath<C, A> = \C // expected-error{{must have at least one component}}
   // expected-error@-1 {{generic parameter 'T' could not be inferred}}
-  // expected-error@-2 {{cannot convert value of type 'KeyPath<Root, Value>' to specified type 'KeyPath<C<T>, A>'}}
+  let _: KeyPath<A, C> = \A // expected-error{{must have at least one component}} 
+  // expected-error@-1 {{generic parameter 'T' could not be inferred}}
+  _ = \A // expected-error {{key path must have at least one component}}
 }
 
 struct TupleStruct {
@@ -322,8 +324,8 @@ func testKeyPathSubscript(readonly: Z, writable: inout Z,
   var anySink2 = writable[keyPath: pkp]
   expect(&anySink2, toHaveType: Exactly<Any>.self)
 
-  readonly[keyPath: pkp] = anySink1 // expected-error{{cannot assign through subscript: 'readonly' is a 'let' constant}}
-  writable[keyPath: pkp] = anySink2 // expected-error{{cannot assign through subscript: 'writable' is immutable}}
+  readonly[keyPath: pkp] = anySink1 // expected-error{{cannot assign through subscript: 'pkp' is a read-only key path}}
+  writable[keyPath: pkp] = anySink2 // expected-error{{cannot assign through subscript: 'pkp' is a read-only key path}}
 
   let akp: AnyKeyPath = pkp
 
@@ -441,12 +443,12 @@ func testKeyPathSubscriptLValue(base: Z, kp: inout KeyPath<Z, Z>) {
 }
 
 func testKeyPathSubscriptExistentialBase(concreteBase: inout B,
-                                     existentialBase: inout P,
-                                     kp: KeyPath<P, String>,
-                                     wkp: WritableKeyPath<P, String>,
-                                     rkp: ReferenceWritableKeyPath<P, String>,
-                                     pkp: PartialKeyPath<P>,
-                                     s: String) {
+                                         existentialBase: inout P,
+                                         kp: KeyPath<P, String>,
+                                         wkp: WritableKeyPath<P, String>,
+                                         rkp: ReferenceWritableKeyPath<P, String>,
+                                         pkp: PartialKeyPath<P>,
+                                         s: String) {
   _ = concreteBase[keyPath: kp]
   _ = concreteBase[keyPath: wkp]
   _ = concreteBase[keyPath: rkp]
@@ -455,9 +457,7 @@ func testKeyPathSubscriptExistentialBase(concreteBase: inout B,
   concreteBase[keyPath: kp] = s // expected-error {{cannot assign through subscript: 'kp' is a read-only key path}}
   concreteBase[keyPath: wkp] = s // expected-error {{key path with root type 'P' cannot be applied to a base of type 'B'}}
   concreteBase[keyPath: rkp] = s
-  // TODO(diagnostics): Improve this diagnostic message because concreteBase is mutable, the problem is related to assign 
-  // through PartialKeyPath.
-  concreteBase[keyPath: pkp] = s // expected-error {{cannot assign through subscript: 'concreteBase' is immutable}}
+  concreteBase[keyPath: pkp] = s // expected-error {{cannot assign through subscript: 'pkp' is a read-only key path}}
 
   _ = existentialBase[keyPath: kp]
   _ = existentialBase[keyPath: wkp]
@@ -467,9 +467,7 @@ func testKeyPathSubscriptExistentialBase(concreteBase: inout B,
   existentialBase[keyPath: kp] = s // expected-error {{cannot assign through subscript: 'kp' is a read-only key path}}
   existentialBase[keyPath: wkp] = s
   existentialBase[keyPath: rkp] = s
-  // TODO(diagnostics): Improve this diagnostic message because existentialBase is mutable, the problem is related to assign 
-  // through PartialKeyPath.
-  existentialBase[keyPath: pkp] = s // expected-error {{cannot assign through subscript: 'existentialBase' is immutable}}
+  existentialBase[keyPath: pkp] = s // expected-error {{cannot assign through subscript: 'pkp' is a read-only key path}}
 }
 
 struct AA {

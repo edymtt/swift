@@ -950,7 +950,8 @@ std::error_code ModuleInterfaceLoader::findModuleFilesInDirectory(
   SmallVectorImpl<char> *ModuleInterfacePath,
   std::unique_ptr<llvm::MemoryBuffer> *ModuleBuffer,
   std::unique_ptr<llvm::MemoryBuffer> *ModuleDocBuffer,
-  std::unique_ptr<llvm::MemoryBuffer> *ModuleSourceInfoBuffer) {
+  std::unique_ptr<llvm::MemoryBuffer> *ModuleSourceInfoBuffer,
+  bool IsFramework) {
 
   // If running in OnlySerialized mode, ModuleInterfaceLoader
   // should not have been constructed at all.
@@ -1392,11 +1393,12 @@ InterfaceSubContextDelegateImpl::getCacheHash(StringRef useInterfacePath) {
   return llvm::APInt(64, H).toString(36, /*Signed=*/false);
 }
 
-bool InterfaceSubContextDelegateImpl::runInSubContext(StringRef moduleName,
-                                                      StringRef interfacePath,
-                                                      StringRef outputPath,
-                                                      SourceLoc diagLoc,
-    llvm::function_ref<bool(ASTContext&, ModuleDecl*, ArrayRef<StringRef>,
+std::error_code
+InterfaceSubContextDelegateImpl::runInSubContext(StringRef moduleName,
+                                                 StringRef interfacePath,
+                                                 StringRef outputPath,
+                                                 SourceLoc diagLoc,
+    llvm::function_ref<std::error_code(ASTContext&, ModuleDecl*, ArrayRef<StringRef>,
                             ArrayRef<StringRef>, StringRef)> action) {
   return runInSubCompilerInstance(moduleName, interfacePath, outputPath, diagLoc,
                                   [&](SubCompilerInstanceInfo &info){
@@ -1408,11 +1410,12 @@ bool InterfaceSubContextDelegateImpl::runInSubContext(StringRef moduleName,
   });
 }
 
-bool InterfaceSubContextDelegateImpl::runInSubCompilerInstance(StringRef moduleName,
-                                                               StringRef interfacePath,
-                                                               StringRef outputPath,
-                                                               SourceLoc diagLoc,
-                  llvm::function_ref<bool(SubCompilerInstanceInfo&)> action) {
+std::error_code
+InterfaceSubContextDelegateImpl::runInSubCompilerInstance(StringRef moduleName,
+                                                          StringRef interfacePath,
+                                                          StringRef outputPath,
+                                                          SourceLoc diagLoc,
+                  llvm::function_ref<std::error_code(SubCompilerInstanceInfo&)> action) {
   // We are about to mess up the compiler invocation by using the compiler
   // arguments in the textual interface file. So copy to use a new compiler
   // invocation.
@@ -1456,12 +1459,12 @@ bool InterfaceSubContextDelegateImpl::runInSubCompilerInstance(StringRef moduleN
                                           CompilerVersion,
                                           interfacePath,
                                           diagLoc)) {
-    return true;
+    return std::make_error_code(std::errc::not_supported);
   }
   // Insert arguments collected from the interface file.
   BuildArgs.insert(BuildArgs.end(), SubArgs.begin(), SubArgs.end());
   if (subInvocation.parseArgs(SubArgs, Diags)) {
-    return true;
+    return std::make_error_code(std::errc::not_supported);
   }
   CompilerInstance subInstance;
   SubCompilerInstanceInfo info;
@@ -1473,7 +1476,7 @@ bool InterfaceSubContextDelegateImpl::runInSubCompilerInstance(StringRef moduleN
   ForwardingDiagnosticConsumer FDC(Diags);
   subInstance.addDiagnosticConsumer(&FDC);
   if (subInstance.setup(subInvocation)) {
-    return true;
+    return std::make_error_code(std::errc::not_supported);
   }
   info.BuildArguments = BuildArgs;
   info.Hash = CacheHash;
@@ -1521,27 +1524,29 @@ ExplicitSwiftModuleLoader::ExplicitSwiftModuleLoader(
 
 ExplicitSwiftModuleLoader::~ExplicitSwiftModuleLoader() { delete &Impl; }
 
-std::error_code ExplicitSwiftModuleLoader::findModuleFilesInDirectory(
-    AccessPathElem ModuleID,
-    const SerializedModuleBaseName &BaseName,
-    SmallVectorImpl<char> *ModuleInterfacePath,
-    std::unique_ptr<llvm::MemoryBuffer> *ModuleBuffer,
-    std::unique_ptr<llvm::MemoryBuffer> *ModuleDocBuffer,
-    std::unique_ptr<llvm::MemoryBuffer> *ModuleSourceInfoBuffer) {
+bool ExplicitSwiftModuleLoader::findModule(AccessPathElem ModuleID,
+           SmallVectorImpl<char> *ModuleInterfacePath,
+           std::unique_ptr<llvm::MemoryBuffer> *ModuleBuffer,
+           std::unique_ptr<llvm::MemoryBuffer> *ModuleDocBuffer,
+           std::unique_ptr<llvm::MemoryBuffer> *ModuleSourceInfoBuffer,
+           bool &IsFramework, bool &IsSystemModule) {
   StringRef moduleName = ModuleID.Item.str();
   auto it = Impl.ExplicitModuleMap.find(moduleName);
   // If no explicit module path is given matches the name, return with an
   // error code.
   if (it == Impl.ExplicitModuleMap.end()) {
-    return std::make_error_code(std::errc::not_supported);
+    return false;
   }
   auto &moduleInfo = it->getValue();
   if (moduleInfo.moduleBuffer) {
     // We found an explicit module matches the given name, give the buffer
     // back to the caller side.
     *ModuleBuffer = std::move(moduleInfo.moduleBuffer);
-    return std::error_code();
+    return true;
   }
+
+  // Set IsFramework bit according to the moduleInfo
+  IsFramework = moduleInfo.isFramework;
 
   auto &fs = *Ctx.SourceMgr.getFileSystem();
   // Open .swiftmodule file
@@ -1550,7 +1555,7 @@ std::error_code ExplicitSwiftModuleLoader::findModuleFilesInDirectory(
     // We cannot read the module content, diagnose.
     Ctx.Diags.diagnose(SourceLoc(), diag::error_opening_explicit_module_file,
                        moduleInfo.modulePath);
-    return moduleBuf.getError();
+    return false;
   }
 
   assert(moduleBuf);
@@ -1566,13 +1571,13 @@ std::error_code ExplicitSwiftModuleLoader::findModuleFilesInDirectory(
         // We cannot read the module content, diagnose.
         Ctx.Diags.diagnose(SourceLoc(), diag::error_opening_explicit_module_file,
                            moduleInfo.modulePath);
-        return moduleBuf.getError();
+        return false;
       }
     } else {
       // We cannot read the module content, diagnose.
       Ctx.Diags.diagnose(SourceLoc(), diag::error_opening_explicit_module_file,
                          moduleInfo.modulePath);
-      return forwardingModule.getError();
+      return false;
     }
   }
   assert(moduleBuf);
@@ -1591,7 +1596,19 @@ std::error_code ExplicitSwiftModuleLoader::findModuleFilesInDirectory(
     if (moduleSourceInfoBuf)
       *ModuleSourceInfoBuffer = std::move(moduleSourceInfoBuf.get());
   }
-  return std::error_code();
+  return true;
+}
+
+std::error_code ExplicitSwiftModuleLoader::findModuleFilesInDirectory(
+  AccessPathElem ModuleID,
+  const SerializedModuleBaseName &BaseName,
+  SmallVectorImpl<char> *ModuleInterfacePath,
+  std::unique_ptr<llvm::MemoryBuffer> *ModuleBuffer,
+  std::unique_ptr<llvm::MemoryBuffer> *ModuleDocBuffer,
+  std::unique_ptr<llvm::MemoryBuffer> *ModuleSourceInfoBuffer,
+  bool IsFramework) {
+  llvm_unreachable("Not supported in the Explicit Swift Module Loader.");
+  return std::make_error_code(std::errc::not_supported);
 }
 
 bool ExplicitSwiftModuleLoader::canImportModule(

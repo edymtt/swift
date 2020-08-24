@@ -669,6 +669,10 @@ public:
   /// compiler for the target platform.
   AvailabilityContext getSwift53Availability();
 
+  /// Get the runtime availability of features introduced in the Swift 5.4
+  /// compiler for the target platform.
+  AvailabilityContext getSwift54Availability();
+
   /// Get the runtime availability of features that have been introduced in the
   /// Swift compiler for future versions of the target platform.
   AvailabilityContext getSwiftFutureAvailability();
@@ -732,6 +736,12 @@ public:
   Optional<ModuleDependencies> getModuleDependencies(
       StringRef moduleName,
       bool isUnderlyingClangModule,
+      ModuleDependenciesCache &cache,
+      InterfaceSubContextDelegate &delegate);
+
+  /// Retrieve the module dependencies for the Swift module with the given name.
+  Optional<ModuleDependencies> getSwiftModuleDependencies(
+      StringRef moduleName,
       ModuleDependenciesCache &cache,
       InterfaceSubContextDelegate &delegate);
 

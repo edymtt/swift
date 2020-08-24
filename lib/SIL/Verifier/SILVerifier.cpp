@@ -3003,6 +3003,7 @@ public:
 
     auto fnTy = SILFunctionType::get(nullptr,
                                      methodTy->getExtInfo(),
+                                     methodTy->isAsync(),
                                      methodTy->getCoroutineKind(),
                                      methodTy->getCalleeConvention(),
                                      dynParams,
@@ -4730,7 +4731,7 @@ public:
   }
 
   void checkLinearFunctionExtractInst(LinearFunctionExtractInst *lfei) {
-    auto fnTy = lfei->getFunctionOperand()->getType().getAs<SILFunctionType>();
+    auto fnTy = lfei->getOperand()->getType().getAs<SILFunctionType>();
     require(fnTy, "The function operand must have a function type");
     require(fnTy->getDifferentiabilityKind() == DifferentiabilityKind::Linear,
             "The function operand must be a '@differentiable(linear)' "

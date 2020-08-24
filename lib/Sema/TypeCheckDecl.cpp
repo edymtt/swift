@@ -1066,7 +1066,7 @@ EnumRawValuesRequest::evaluate(Evaluator &eval, EnumDecl *ED,
       if (TypeChecker::typeCheckExpression(exprToCheck, ED,
                                            rawTy,
                                            CTP_EnumCaseRawValue)) {
-        TypeChecker::checkEnumElementErrorHandling(elt, exprToCheck);
+        TypeChecker::checkEnumElementEffects(elt, exprToCheck);
       }
     }
 
@@ -1682,7 +1682,7 @@ IsImplicitlyUnwrappedOptionalRequest::evaluate(Evaluator &evaluator,
 
   switch (decl->getKind()) {
   case DeclKind::Func: {
-    TyR = cast<FuncDecl>(decl)->getBodyResultTypeLoc().getTypeRepr();
+    TyR = cast<FuncDecl>(decl)->getResultTypeRepr();
     break;
   }
 
@@ -1693,14 +1693,14 @@ IsImplicitlyUnwrappedOptionalRequest::evaluate(Evaluator &evaluator,
 
     auto *storage = accessor->getStorage();
     if (auto *subscript = dyn_cast<SubscriptDecl>(storage))
-      TyR = subscript->getElementTypeLoc().getTypeRepr();
+      TyR = subscript->getElementTypeRepr();
     else
       TyR = cast<VarDecl>(storage)->getTypeReprOrParentPatternTypeRepr();
     break;
   }
 
   case DeclKind::Subscript:
-    TyR = cast<SubscriptDecl>(decl)->getElementTypeLoc().getTypeRepr();
+    TyR = cast<SubscriptDecl>(decl)->getElementTypeRepr();
     break;
 
   case DeclKind::Param: {
@@ -2003,7 +2003,12 @@ ResultTypeRequest::evaluate(Evaluator &evaluator, ValueDecl *decl) const {
     }
   }
 
-  auto *resultTyRepr = getResultTypeLoc().getTypeRepr();
+  TypeRepr *resultTyRepr = nullptr;
+  if (const auto *const funcDecl = dyn_cast<FuncDecl>(decl)) {
+    resultTyRepr = funcDecl->getResultTypeRepr();
+  } else {
+    resultTyRepr = cast<SubscriptDecl>(decl)->getElementTypeRepr();
+  }
 
   // Nothing to do if there's no result type.
   if (resultTyRepr == nullptr)
@@ -2148,9 +2153,21 @@ static Type validateParameterType(ParamDecl *decl) {
       decl->setInvalid();
       return ErrorType::get(ctx);
     }
-
-    return Ty;
   }
+
+  // async autoclosures can only occur as parameters to async functions.
+  if (decl->isAutoClosure()) {
+    if (auto fnType = Ty->getAs<FunctionType>()) {
+      if (fnType->isAsync() &&
+          !(isa<AbstractFunctionDecl>(dc) &&
+            cast<AbstractFunctionDecl>(dc)->isAsyncContext())) {
+        decl->diagnose(diag::async_autoclosure_nonasync_function);
+        if (auto func = dyn_cast<FuncDecl>(dc))
+          addAsyncNotes(func);
+      }
+    }
+  }
+
   return Ty;
 }
 

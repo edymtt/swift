@@ -339,6 +339,10 @@ struct ASTContext::Implementation {
   /// LiteralExprs in fully-checked AST.
   llvm::DenseMap<const NominalTypeDecl *, ConcreteDeclRef> BuiltinInitWitness;
 
+  /// Mapping from the function decl to its original body's source range. This
+  /// is populated if the body is reparsed from other source buffers.
+  llvm::DenseMap<const AbstractFunctionDecl *, SourceRange> OriginalBodySourceRanges;
+
   /// Structure that captures data that is segregated into different
   /// arenas.
   struct Arena {
@@ -1509,6 +1513,21 @@ Optional<ModuleDependencies> ASTContext::getModuleDependencies(
       return dependencies;
   }
 
+  return None;
+}
+
+Optional<ModuleDependencies>
+ASTContext::getSwiftModuleDependencies(StringRef moduleName,
+                                       ModuleDependenciesCache &cache,
+                                       InterfaceSubContextDelegate &delegate) {
+  for (auto &loader : getImpl().ModuleLoaders) {
+    if (loader.get() == getImpl().TheClangModuleLoader)
+      continue;
+
+    if (auto dependencies = loader->getModuleDependencies(moduleName, cache,
+                                                          delegate))
+      return dependencies;
+  }
   return None;
 }
 
@@ -3241,6 +3260,7 @@ void SILFunctionType::Profile(
     llvm::FoldingSetNodeID &id,
     GenericSignature genericParams,
     ExtInfo info,
+    bool isAsync,
     SILCoroutineKind coroutineKind,
     ParameterConvention calleeConvention,
     ArrayRef<SILParameterInfo> params,
@@ -3254,6 +3274,7 @@ void SILFunctionType::Profile(
   auto infoKey = info.getFuncAttrKey();
   id.AddInteger(infoKey.first);
   id.AddPointer(infoKey.second);
+  id.AddBoolean(isAsync);
   id.AddInteger(unsigned(coroutineKind));
   id.AddInteger(unsigned(calleeConvention));
   id.AddInteger(params.size());
@@ -3279,6 +3300,7 @@ void SILFunctionType::Profile(
 SILFunctionType::SILFunctionType(
     GenericSignature genericSig,
     ExtInfo ext,
+    bool isAsync,
     SILCoroutineKind coroutineKind,
     ParameterConvention calleeConvention,
     ArrayRef<SILParameterInfo> params,
@@ -3304,6 +3326,7 @@ SILFunctionType::SILFunctionType(
          "Bits were dropped!");
   static_assert(SILExtInfoBuilder::NumMaskBits == NumSILExtInfoBits,
                 "ExtInfo and SILFunctionTypeBitfields must agree on bit size");
+  Bits.SILFunctionType.IsAsync = isAsync;
   Bits.SILFunctionType.CoroutineKind = unsigned(coroutineKind);
   NumParameters = params.size();
   if (coroutineKind == SILCoroutineKind::None) {
@@ -3447,7 +3470,7 @@ CanSILBlockStorageType SILBlockStorageType::get(CanType captureType) {
 
 CanSILFunctionType SILFunctionType::get(
     GenericSignature genericSig,
-    ExtInfo ext, SILCoroutineKind coroutineKind,
+    ExtInfo ext, bool isAsync, SILCoroutineKind coroutineKind,
     ParameterConvention callee,
     ArrayRef<SILParameterInfo> params,
     ArrayRef<SILYieldInfo> yields,
@@ -3465,8 +3488,8 @@ CanSILFunctionType SILFunctionType::get(
   invocationSubs = invocationSubs.getCanonical();
   
   llvm::FoldingSetNodeID id;
-  SILFunctionType::Profile(id, genericSig, ext, coroutineKind, callee, params,
-                           yields, normalResults, errorResult,
+  SILFunctionType::Profile(id, genericSig, ext, isAsync, coroutineKind, callee,
+                           params, yields, normalResults, errorResult,
                            witnessMethodConformance,
                            patternSubs, invocationSubs);
 
@@ -3514,7 +3537,7 @@ CanSILFunctionType SILFunctionType::get(
   }
 
   auto fnType =
-      new (mem) SILFunctionType(genericSig, ext, coroutineKind, callee,
+      new (mem) SILFunctionType(genericSig, ext, isAsync, coroutineKind, callee,
                                 params, yields, normalResults, errorResult,
                                 patternSubs, invocationSubs,
                                 ctx, properties, witnessMethodConformance);
@@ -3831,6 +3854,11 @@ CanOpenedArchetypeType OpenedArchetypeType::get(Type existential,
     protos.push_back(proto->getDecl());
 
   auto layoutConstraint = layout.getLayoutConstraint();
+  if (!layoutConstraint && layout.requiresClass()) {
+    layoutConstraint = LayoutConstraint::getLayoutConstraint(
+        LayoutConstraintKind::Class);
+  }
+
   auto layoutSuperclass = layout.getSuperclass();
 
   auto arena = AllocationArena::Permanent;
@@ -3875,10 +3903,6 @@ CanType OpenedArchetypeType::getAny(Type existential) {
   }
   assert(existential->isExistentialType());
   return OpenedArchetypeType::get(existential);
-}
-
-void TypeLoc::setInvalidType(ASTContext &C) {
-  Ty = ErrorType::get(C);
 }
 
 void SubstitutionMap::Storage::Profile(
@@ -4776,6 +4800,36 @@ void VarDecl::setOriginalWrappedProperty(VarDecl *originalProperty) {
   ASTContext &ctx = getASTContext();
   assert(ctx.getImpl().OriginalWrappedProperties.count(this) == 0);
   ctx.getImpl().OriginalWrappedProperties[this] = originalProperty;
+}
+
+#ifndef NDEBUG
+static bool isSourceLocInOrignalBuffer(const Decl *D, SourceLoc Loc) {
+  assert(Loc.isValid());
+  auto bufferID = D->getDeclContext()->getParentSourceFile()->getBufferID();
+  assert(bufferID.hasValue() && "Source buffer ID must be set");
+  auto &SM = D->getASTContext().SourceMgr;
+  return SM.getRangeForBuffer(*bufferID).contains(Loc);
+}
+#endif
+
+void AbstractFunctionDecl::keepOriginalBodySourceRange() {
+  auto &impl = getASTContext().getImpl();
+  auto result =
+      impl.OriginalBodySourceRanges.insert({this, getBodySourceRange()});
+  assert((!result.second ||
+          isSourceLocInOrignalBuffer(this, result.first->getSecond().Start)) &&
+         "This function must be called before setting new body range");
+  (void)result;
+}
+
+SourceRange AbstractFunctionDecl::getOriginalBodySourceRange() const {
+  auto &impl = getASTContext().getImpl();
+  auto found = impl.OriginalBodySourceRanges.find(this);
+  if (found != impl.OriginalBodySourceRanges.end()) {
+    return found->getSecond();
+  } else {
+    return getBodySourceRange();
+  }
 }
 
 IndexSubset *

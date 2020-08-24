@@ -79,22 +79,10 @@ namespace {
   /// Internal struct for tracking information about types within a series
   /// of "linked" expressions. (Such as a chain of binary operator invocations.)
   struct LinkedTypeInfo {
-    unsigned haveIntLiteral : 1;
-    unsigned haveFloatLiteral : 1;
-    unsigned haveStringLiteral : 1;
+    bool hasLiteral = false;
 
     llvm::SmallSet<TypeBase*, 16> collectedTypes;
     llvm::SmallVector<BinaryExpr *, 4> binaryExprs;
-
-    LinkedTypeInfo() {
-      haveIntLiteral = false;
-      haveFloatLiteral = false;
-      haveStringLiteral = false;
-    }
-
-    bool hasLiteral() {
-      return haveIntLiteral || haveFloatLiteral || haveStringLiteral;
-    }
   };
 
   /// Walks an expression sub-tree, and collects information about expressions
@@ -180,19 +168,9 @@ namespace {
           !CS.getType(expr)->hasTypeVariable()) {
         return { false, expr };
       }
-      
-      if (isa<IntegerLiteralExpr>(expr)) {
-        LTI.haveIntLiteral = true;
-        return { false, expr };
-      }
-      
-      if (isa<FloatLiteralExpr>(expr)) {
-        LTI.haveFloatLiteral = true;
-        return { false, expr };
-      }
-      
-      if (isa<StringLiteralExpr>(expr)) {
-        LTI.haveStringLiteral = true;
+
+      if (isa<LiteralExpr>(expr)) {
+        LTI.hasLiteral = true;
         return { false, expr };
       }
 
@@ -331,7 +309,7 @@ namespace {
       auto simplifyBinOpExprTyVars = [&]() {
         // Don't attempt to do linking if there are
         // literals intermingled with other inferred types.
-        if (lti.hasLiteral())
+        if (lti.hasLiteral)
           return;
 
         for (auto binExp1 : lti.binaryExprs) {
@@ -391,42 +369,6 @@ namespace {
       simplifyBinOpExprTyVars();       
 
       return true;
-    }    
-    
-    if (lti.haveFloatLiteral) {
-      if (auto floatProto = CS.getASTContext().getProtocol(
-              KnownProtocolKind::ExpressibleByFloatLiteral)) {
-        if (auto defaultType = TypeChecker::getDefaultType(floatProto, CS.DC)) {
-          if (!CS.getFavoredType(expr)) {
-            CS.setFavoredType(expr, defaultType.getPointer());
-          }
-          return true;
-        }
-      }
-    }
-    
-    if (lti.haveIntLiteral) {
-      if (auto intProto = CS.getASTContext().getProtocol(
-              KnownProtocolKind::ExpressibleByIntegerLiteral)) {
-        if (auto defaultType = TypeChecker::getDefaultType(intProto, CS.DC)) {
-          if (!CS.getFavoredType(expr)) {
-            CS.setFavoredType(expr, defaultType.getPointer());
-          }
-          return true;
-        }
-      }
-    }
-    
-    if (lti.haveStringLiteral) {
-      if (auto stringProto = CS.getASTContext().getProtocol(
-              KnownProtocolKind::ExpressibleByStringLiteral)) {
-        if (auto defTy = TypeChecker::getDefaultType(stringProto, CS.DC)) {
-          if (!CS.getFavoredType(expr)) {
-            CS.setFavoredType(expr, defTy.getPointer());
-          }
-          return true;
-        }
-      }
     }
     
     return false;
@@ -2114,9 +2056,7 @@ namespace {
         }
       }
 
-      auto extInfo = FunctionType::ExtInfo();
-      if (closureCanThrow(closure))
-        extInfo = extInfo.withThrows();
+      auto extInfo = closureEffects(closure);
 
       // Closure expressions always have function type. In cases where a
       // parameter or return type is omitted, a fresh type variable is used to
@@ -2249,6 +2189,12 @@ namespace {
 
         Type varType;
 
+        // Determine whether optionality will be required.
+        auto ROK = ReferenceOwnership::Strong;
+        if (auto *OA = var->getAttrs().getAttribute<ReferenceOwnershipAttr>())
+          ROK = OA->get();
+        auto optionality = optionalityOf(ROK);
+
         // If we have a type from an initializer expression, and that
         // expression does not produce an InOut type, use it.  This
         // will avoid exponential typecheck behavior in the case of
@@ -2257,18 +2203,17 @@ namespace {
         // FIXME: This should be handled in the solver, not here.
         //
         // Otherwise, create a new type variable.
-        bool assumedInitializerType = false;
         if (!var->hasNonPatternBindingInit() &&
-            !var->hasAttachedPropertyWrapper()) {
+            !var->hasAttachedPropertyWrapper() &&
+            optionality != ReferenceOwnershipOptionality::Required) {
           if (auto boundExpr = locator.trySimplifyToExpr()) {
             if (!boundExpr->isSemanticallyInOutExpr()) {
               varType = CS.getType(boundExpr)->getRValueType();
-              assumedInitializerType = true;
             }
           }
         }
 
-        if (!assumedInitializerType)
+        if (!varType)
           varType = CS.createTypeVariable(CS.getConstraintLocator(locator),
                                           TVO_CanBindToNoEscape);
 
@@ -2286,22 +2231,8 @@ namespace {
 
         // If there is an externally-imposed type.
 
-        auto ROK = ReferenceOwnership::Strong;
-        if (auto *OA = var->getAttrs().getAttribute<ReferenceOwnershipAttr>())
-          ROK = OA->get();
-        switch (optionalityOf(ROK)) {
+        switch (optionality) {
         case ReferenceOwnershipOptionality::Required:
-          if (assumedInitializerType) {
-            // Already Optional<T>
-            if (varType->getOptionalObjectType())
-              break;
-
-            // Create a fresh type variable to handle overloaded expressions.
-            if (varType->is<TypeVariableType>())
-              varType = CS.createTypeVariable(CS.getConstraintLocator(locator),
-                                              TVO_CanBindToNoEscape);
-          }
-
           varType = TypeChecker::getOptionalType(var->getLoc(), varType);
           assert(!varType->hasError());
 
@@ -2491,22 +2422,30 @@ namespace {
         if (enumPattern->getParentType() || enumPattern->getParentTypeRepr()) {
           // Resolve the parent type.
           Type parentType = [&]() -> Type {
-            if (const auto resolvedTy = enumPattern->getParentType()) {
-              assert(resolvedTy->hasUnboundGenericType() == false &&
-                     "A pre-resolved type must be fully bound");
-              return resolvedTy;
+            if (auto preTy = enumPattern->getParentType()) {
+              return preTy;
             }
             return resolveTypeReferenceInExpression(
                 enumPattern->getParentTypeRepr(),
-                TypeResolverContext::InExpression,
-                OpenUnboundGenericType(
-                    CS, CS.getConstraintLocator(
-                            locator, {LocatorPathElt::PatternMatch(pattern),
-                                      ConstraintLocator::ParentType})));
+                TypeResolverContext::InExpression, [](auto unboundTy) {
+                  // FIXME: We ought to pass an OpenUnboundGenericType object
+                  // rather than calling CS.openUnboundGenericType below, but
+                  // sometimes the parent type is resolved eagerly in
+                  // ResolvePattern::visitUnresolvedDotExpr, letting unbound
+                  // generics escape.
+                  return unboundTy;
+                });
           }();
 
           if (!parentType)
             return Type();
+
+          parentType = CS.openUnboundGenericTypes(
+              parentType, CS.getConstraintLocator(
+                              locator, {LocatorPathElt::PatternMatch(pattern),
+                                        ConstraintLocator::ParentType}));
+
+          assert(parentType);
 
           // Perform member lookup into the parent's metatype.
           Type parentMetaType = MetatypeType::get(parentType);
@@ -2588,9 +2527,12 @@ namespace {
       return CS.getType(expr->getClosureBody());
     }
 
-    /// Walk a closure AST to determine if it can throw.
-    bool closureCanThrow(ClosureExpr *expr) {
-      // A walker that looks for 'try' or 'throw' expressions
+    /// Walk a closure AST to determine its effects.
+    ///
+    /// \returns a function's extended info describing the effects, as
+    /// determined syntactically.
+    FunctionType::ExtInfo closureEffects(ClosureExpr *expr) {
+      // A walker that looks for 'try' and 'throw' expressions
       // that aren't nested within closures, nested declarations,
       // or exhaustive catches.
       class FindInnerThrows : public ASTWalker {
@@ -2735,18 +2677,62 @@ namespace {
 
         bool foundThrow() { return FoundThrow; }
       };
-      
-      if (expr->getThrowsLoc().isValid())
-        return true;
-      
+
+      // A walker that looks for 'async' and 'await' expressions
+      // that aren't nested within closures or nested declarations.
+      class FindInnerAsync : public ASTWalker {
+        bool FoundAsync = false;
+
+        std::pair<bool, Expr *> walkToExprPre(Expr *expr) override {
+          // If we've found an 'await', record it and terminate the traversal.
+          if (isa<AwaitExpr>(expr)) {
+            FoundAsync = true;
+            return { false, nullptr };
+          }
+
+          // Do not recurse into other closures.
+          if (isa<ClosureExpr>(expr))
+            return { false, expr };
+
+          return { true, expr };
+        }
+
+        bool walkToDeclPre(Decl *decl) override {
+          // Do not walk into function or type declarations.
+          if (!isa<PatternBindingDecl>(decl))
+            return false;
+
+          return true;
+        }
+
+      public:
+        bool foundAsync() { return FoundAsync; }
+      };
+
+      // If either 'throws' or 'async' was explicitly specified, use that
+      // set of effects.
+      bool throws = expr->getThrowsLoc().isValid();
+      bool async = expr->getAsyncLoc().isValid();
+      if (throws || async) {
+        return ASTExtInfoBuilder()
+          .withThrows(throws)
+          .withAsync(async)
+          .build();
+      }
+
+      // Scan the body to determine the effects.
       auto body = expr->getBody();
-      
       if (!body)
-        return false;
-      
-      auto tryFinder = FindInnerThrows(CS, expr);
-      body->walk(tryFinder);
-      return tryFinder.foundThrow();
+        return FunctionType::ExtInfo();
+
+      auto throwFinder = FindInnerThrows(CS, expr);
+      body->walk(throwFinder);
+      auto asyncFinder = FindInnerAsync();
+      body->walk(asyncFinder);
+      return ASTExtInfoBuilder()
+        .withThrows(throwFinder.foundThrow())
+        .withAsync(asyncFinder.foundAsync())
+        .build();
     }
 
     Type visitClosureExpr(ClosureExpr *closure) {

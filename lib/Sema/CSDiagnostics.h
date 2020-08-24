@@ -1075,6 +1075,14 @@ private:
   /// that defaults the element type. e.g. _ = [.e]
   bool diagnoseInLiteralCollectionContext() const;
 
+  /// Tailored diagnostics for missing subscript member on a tuple base type.
+  /// e.g
+  /// ```swift
+  ///   let tuple: (Int, Int) = (0, 0)
+  ///   _ = tuple[0] // -> tuple.0.
+  ///  ```
+  bool diagnoseForSubscriptMemberWithTupleBase() const;
+
   static DeclName findCorrectEnumCaseName(Type Ty,
                                           TypoCorrectionResults &corrections,
                                           DeclNameRef memberName);
@@ -2005,7 +2013,7 @@ public:
                                           ConstraintLocator *locator)
       : FailureDiagnostic(solution, locator), MemberName(member) {}
 
-  bool diagnoseAsError();
+  bool diagnoseAsError() override;
 };
 
 class UnableToInferClosureParameterType final : public FailureDiagnostic {
@@ -2014,7 +2022,7 @@ public:
                                     ConstraintLocator *locator)
       : FailureDiagnostic(solution, locator) {}
 
-  bool diagnoseAsError();
+  bool diagnoseAsError() override;
 };
 
 class UnableToInferClosureReturnType final : public FailureDiagnostic {
@@ -2023,7 +2031,7 @@ public:
                                  ConstraintLocator *locator)
       : FailureDiagnostic(solution, locator) {}
 
-  bool diagnoseAsError();
+  bool diagnoseAsError() override;
 };
 
 class UnableToInferProtocolLiteralType final : public FailureDiagnostic {
@@ -2057,7 +2065,7 @@ public:
                                       ConstraintLocator *locator)
       : FailureDiagnostic(solution, locator) {}
 
-  bool diagnoseAsError();
+  bool diagnoseAsError() override;
 };
 
 /// Emits a warning about an attempt to use the 'as' operator as the 'as!'
@@ -2238,6 +2246,20 @@ public:
 private:
   void fixIt(InFlightDiagnostic &diagnostic,
              const FunctionArgApplyInfo &info) const;
+};
+
+/// Diagnose situations where we have a key path with no components.
+///
+/// \code
+/// let _ : KeyPath<A, B> = \A
+/// \endcode
+class InvalidEmptyKeyPathFailure final : public FailureDiagnostic {
+public:
+  InvalidEmptyKeyPathFailure(const Solution &solution,
+                             ConstraintLocator *locator)
+      : FailureDiagnostic(solution, locator) {}
+
+  bool diagnoseAsError() override;
 };
 
 } // end namespace constraints

@@ -3206,14 +3206,8 @@ PrimaryArchetypeType::getNew(const ASTContext &Ctx,
 }
 
 bool ArchetypeType::requiresClass() const {
-  if (Bits.ArchetypeType.HasSuperclass)
-    return true;
   if (auto layout = getLayoutConstraint())
-    if (layout->isClass())
-      return true;
-  for (ProtocolDecl *conformed : getConformsTo())
-    if (conformed->requiresClass())
-      return true;
+    return layout->isClass();
   return false;
 }
 
@@ -4384,6 +4378,7 @@ case TypeKind::Id:
     return SILFunctionType::get(
         fnTy->getInvocationGenericSignature(),
         fnTy->getExtInfo(),
+        fnTy->isAsync(),
         fnTy->getCoroutineKind(),
         fnTy->getCalleeConvention(),
         transInterfaceParams,
@@ -4952,8 +4947,7 @@ ReferenceCounting TypeBase::getReferenceCounting() {
     auto archetype = cast<ArchetypeType>(type);
     auto layout = archetype->getLayoutConstraint();
     (void)layout;
-    assert(archetype->requiresClass() ||
-           (layout && layout->isRefCounted()));
+    assert(layout && layout->isRefCounted());
     if (auto supertype = archetype->getSuperclass())
       return supertype->getReferenceCounting();
     return ReferenceCounting::Unknown;
@@ -5378,7 +5372,7 @@ SILFunctionType::withInvocationSubstitutions(SubstitutionMap subs) const {
   assert(!subs || CanGenericSignature(subs.getGenericSignature())
                     == getInvocationGenericSignature());
   return SILFunctionType::get(getInvocationGenericSignature(),
-                          getExtInfo(), getCoroutineKind(),
+                          getExtInfo(), isAsync(), getCoroutineKind(),
                           getCalleeConvention(),
                           getParameters(), getYields(), getResults(),
                           getOptionalErrorResult(),
@@ -5396,7 +5390,7 @@ SILFunctionType::withPatternSubstitutions(SubstitutionMap subs) const {
   assert(!subs || CanGenericSignature(subs.getGenericSignature())
                     == getPatternGenericSignature());
   return SILFunctionType::get(getInvocationGenericSignature(),
-                          getExtInfo(), getCoroutineKind(),
+                          getExtInfo(), isAsync(), getCoroutineKind(),
                           getCalleeConvention(),
                           getParameters(), getYields(), getResults(),
                           getOptionalErrorResult(),
@@ -5415,7 +5409,7 @@ SILFunctionType::withPatternSpecialization(CanGenericSignature sig,
   assert(!subs || CanGenericSignature(subs.getGenericSignature())
                     == getSubstGenericSignature());
   return SILFunctionType::get(sig,
-                          getExtInfo(), getCoroutineKind(),
+                          getExtInfo(), isAsync(), getCoroutineKind(),
                           getCalleeConvention(),
                           getParameters(), getYields(), getResults(),
                           getOptionalErrorResult(),

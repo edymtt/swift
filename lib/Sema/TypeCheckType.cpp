@@ -197,7 +197,7 @@ Type TypeResolution::resolveDependentMemberType(
     TypoCorrectionResults corrections(ref->getNameRef(), ref->getNameLoc());
     TypeChecker::performTypoCorrection(DC, DeclRefKind::Ordinary,
                                        MetatypeType::get(baseTy),
-                                       NameLookupFlags::ProtocolMembers,
+                                       defaultMemberLookupOptions,
                                        corrections, builder);
 
     // Check whether we have a single type result.
@@ -597,26 +597,18 @@ static bool isPointerToVoid(ASTContext &Ctx, Type Ty, bool &IsMutable) {
   return BGT->getGenericArgs().front()->isVoid();
 }
 
-static Type checkContextualRequirements(Type type,
-                                        SourceLoc loc,
-                                        DeclContext *dc) {
-  // Even if the type is not generic, it might be inside of a generic
-  // context, so we need to check requirements.
-  GenericTypeDecl *decl;
-  Type parentTy;
-  if (auto *aliasTy = dyn_cast<TypeAliasType>(type.getPointer())) {
-    decl = aliasTy->getDecl();
-    parentTy = aliasTy->getParent();
-  } else if (auto *nominalTy = type->getAs<NominalType>()) {
-    decl = nominalTy->getDecl();
-    parentTy = nominalTy->getParent();
-  } else {
-    return type;
-  }
-
+/// Even if the type is not generic, it might be inside of a generic
+/// context or have a free-standing 'where' clause, so we need to
+/// those check requirements too.
+///
+/// Return true on success.
+bool TypeChecker::checkContextualRequirements(GenericTypeDecl *decl,
+                                              Type parentTy,
+                                              SourceLoc loc,
+                                              DeclContext *dc) {
   if (!parentTy || parentTy->hasUnboundGenericType() ||
       parentTy->hasTypeVariable()) {
-    return type;
+    return true;
   }
 
   auto &ctx = dc->getASTContext();
@@ -631,7 +623,7 @@ static Type checkContextualRequirements(Type type,
     else if (ext && ext->isConstrainedExtension())
       noteLoc = ext->getLoc();
     else
-      return type;
+      return true;
 
     if (noteLoc.isInvalid())
       noteLoc = loc;
@@ -640,15 +632,18 @@ static Type checkContextualRequirements(Type type,
   const auto subMap = parentTy->getContextSubstitutions(decl->getDeclContext());
   const auto genericSig = decl->getGenericSignature();
   if (!genericSig) {
-    ctx.Diags.diagnose(loc, diag::recursive_decl_reference,
-                       decl->getDescriptiveKind(), decl->getName());
-    decl->diagnose(diag::kind_declared_here, DescriptiveDeclKind::Type);
-    return ErrorType::get(ctx);
+    if (loc.isValid()) {
+      ctx.Diags.diagnose(loc, diag::recursive_decl_reference,
+                         decl->getDescriptiveKind(), decl->getName());
+      decl->diagnose(diag::kind_declared_here, DescriptiveDeclKind::Type);
+    }
+    return false;
   }
 
   const auto result =
     TypeChecker::checkGenericArguments(
-        dc, loc, noteLoc, type,
+        dc, loc, noteLoc,
+        decl->getDeclaredInterfaceType(),
         genericSig->getGenericParams(),
         genericSig->getRequirements(),
         QueryTypeSubstitutionMap{subMap});
@@ -656,9 +651,9 @@ static Type checkContextualRequirements(Type type,
   switch (result) {
   case RequirementCheckResult::Failure:
   case RequirementCheckResult::SubstitutionFailure:
-    return ErrorType::get(ctx);
+    return false;
   case RequirementCheckResult::Success:
-    return type;
+    return true;
   }
   llvm_unreachable("invalid requirement check type");
 }
@@ -709,7 +704,22 @@ static Type applyGenericArguments(Type type, TypeResolution resolution,
     if (resolution.getStage() == TypeResolutionStage::Structural)
       return type;
 
-    return checkContextualRequirements(type, loc, dc);
+    GenericTypeDecl *decl;
+    Type parentTy;
+    if (auto *aliasTy = dyn_cast<TypeAliasType>(type.getPointer())) {
+      decl = aliasTy->getDecl();
+      parentTy = aliasTy->getParent();
+    } else if (auto *nominalTy = type->getAs<NominalType>()) {
+      decl = nominalTy->getDecl();
+      parentTy = nominalTy->getParent();
+    } else {
+      return type;
+    }
+
+    if (TypeChecker::checkContextualRequirements(decl, parentTy, loc, dc))
+      return type;
+
+    return ErrorType::get(resolution.getASTContext());
   }
 
   if (type->hasError()) {
@@ -1489,8 +1499,6 @@ static Type resolveNestedIdentTypeComponent(TypeResolution resolution,
   NameLookupOptions lookupOptions = defaultMemberLookupOptions;
   if (isKnownNonCascading)
     lookupOptions |= NameLookupFlags::KnownPrivate;
-  if (options.is(TypeResolverContext::ExtensionBinding))
-    lookupOptions -= NameLookupFlags::ProtocolMembers;
   LookupTypeResult memberTypes;
   if (parentTy->mayHaveMembers())
     memberTypes = TypeChecker::lookupMemberType(DC, parentTy,
@@ -1741,6 +1749,7 @@ namespace {
 
     Type resolveSILFunctionType(FunctionTypeRepr *repr,
                                 TypeResolutionOptions options,
+                                bool isAsync = false,
                                 SILCoroutineKind coroutineKind
                                   = SILCoroutineKind::None,
                                 SILFunctionType::ExtInfo extInfo
@@ -2070,7 +2079,7 @@ Type TypeResolver::resolveAttributedType(TypeAttributes &attrs,
   static const TypeAttrKind FunctionAttrs[] = {
     TAK_convention, TAK_pseudogeneric,
     TAK_callee_owned, TAK_callee_guaranteed, TAK_noescape, TAK_autoclosure,
-    TAK_differentiable, TAK_escaping, TAK_yield_once, TAK_yield_many
+    TAK_differentiable, TAK_escaping, TAK_yield_once, TAK_yield_many, TAK_async
   };
 
   auto checkUnsupportedAttr = [&](TypeAttrKind attr) {
@@ -2137,6 +2146,8 @@ Type TypeResolver::resolveAttributedType(TypeAttributes &attrs,
     if (options & TypeResolutionFlags::SILType) {
       SILFunctionType::Representation rep;
       TypeRepr *witnessMethodProtocol = nullptr;
+
+      auto isAsync = attrs.has(TAK_async);
 
       auto coroutineKind = SILCoroutineKind::None;
       if (attrs.has(TAK_yield_once)) {
@@ -2219,7 +2230,7 @@ Type TypeResolver::resolveAttributedType(TypeAttributes &attrs,
                          attrs.has(TAK_noescape), diffKind, nullptr)
                          .build();
 
-      ty = resolveSILFunctionType(fnRepr, options, coroutineKind, extInfo,
+      ty = resolveSILFunctionType(fnRepr, options, isAsync, coroutineKind, extInfo,
                                   calleeConvention, witnessMethodProtocol);
       if (!ty || ty->hasError())
         return ty;
@@ -2460,6 +2471,13 @@ Type TypeResolver::resolveAttributedType(TypeAttributes &attrs,
   if ((options & TypeResolutionFlags::SILMode) && attrs.has(TAK_dynamic_self)) {
     ty = rebuildWithDynamicSelf(getASTContext(), ty);
     attrs.clearAttribute(TAK_dynamic_self);
+  }
+
+  // In SIL *only*, allow @async to specify an async function
+  if ((options & TypeResolutionFlags::SILMode) && attrs.has(TAK_async)) {
+    if (fnRepr != nullptr) {
+      attrs.clearAttribute(TAK_async);
+    }
   }
 
   for (unsigned i = 0; i != TypeAttrKind::TAK_Count; ++i)
@@ -2827,6 +2845,7 @@ Type TypeResolver::resolveSILBoxType(SILBoxTypeRepr *repr,
 
 Type TypeResolver::resolveSILFunctionType(FunctionTypeRepr *repr,
                                           TypeResolutionOptions options,
+                                          bool isAsync,
                                           SILCoroutineKind coroutineKind,
                                           SILFunctionType::ExtInfo extInfo,
                                           ParameterConvention callee,
@@ -3021,7 +3040,8 @@ Type TypeResolver::resolveSILFunctionType(FunctionTypeRepr *repr,
            "found witness_method without matching conformance");
   }
 
-  return SILFunctionType::get(genericSig, extInfo, coroutineKind, callee,
+  return SILFunctionType::get(genericSig, extInfo, isAsync,
+                              coroutineKind, callee,
                               interfaceParams, interfaceYields,
                               interfaceResults, interfaceErrorResult,
                               interfacePatternSubs, invocationSubs,

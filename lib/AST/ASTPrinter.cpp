@@ -1297,9 +1297,9 @@ bestRequirementPrintLocation(ProtocolDecl *proto, const Requirement &req) {
   bool inWhereClause;
 
   switch (req.getKind()) {
+  case RequirementKind::Layout:
   case RequirementKind::Conformance:
-  case RequirementKind::Superclass:
-  case RequirementKind::Layout: {
+  case RequirementKind::Superclass: {
     auto subject = req.getFirstType();
     auto result = findRelevantDeclAndDirectUse(subject);
 
@@ -1351,6 +1351,15 @@ void PrintAST::printInheritedFromRequirementSignature(ProtocolDecl *proto,
                             proto->getRequirementSignature()),
       PrintInherited,
       [&](const Requirement &req) {
+        // Skip the inferred 'Self : AnyObject' constraint if this is an
+        // @objc protocol.
+        if (req.getKind() == RequirementKind::Layout &&
+            req.getFirstType()->isEqual(proto->getProtocolSelfType()) &&
+            req.getLayoutConstraint()->getKind() == LayoutConstraintKind::Class &&
+            proto->isObjC()) {
+          return false;
+        }
+
         auto location = bestRequirementPrintLocation(proto, req);
         return location.AttachedTo == attachingTo && !location.InWhereClause;
       });
@@ -2939,8 +2948,8 @@ void PrintAST::visitFuncDecl(FuncDecl *decl) {
   if (Options.PrintOriginalSourceText && decl->getStartLoc().isValid()) {
     SourceLoc StartLoc = decl->getStartLoc();
     SourceLoc EndLoc;
-    if (!decl->getBodyResultTypeLoc().isNull()) {
-      EndLoc = decl->getBodyResultTypeLoc().getSourceRange().End;
+    if (decl->getResultTypeRepr()) {
+      EndLoc = decl->getResultTypeSourceRange().End;
     } else {
       EndLoc = decl->getSignatureSourceRange().End;
     }
@@ -2977,7 +2986,7 @@ void PrintAST::visitFuncDecl(FuncDecl *decl) {
 
     Type ResultTy = decl->getResultInterfaceType();
     if (ResultTy && !ResultTy->isVoid()) {
-      TypeLoc ResultTyLoc = decl->getBodyResultTypeLoc();
+      TypeLoc ResultTyLoc(decl->getResultTypeRepr(), ResultTy);
 
       // When printing a protocol requirement with types substituted for a
       // conforming class, replace occurrences of the 'Self' generic parameter
@@ -3157,9 +3166,8 @@ void PrintAST::visitSubscriptDecl(SubscriptDecl *decl) {
   });
   Printer << " -> ";
 
-  TypeLoc elementTy = decl->getElementTypeLoc();
-  if (!elementTy.getTypeRepr())
-    elementTy = TypeLoc::withoutLoc(decl->getElementInterfaceType());
+  TypeLoc elementTy(decl->getElementTypeRepr(),
+                    decl->getElementInterfaceType());
   Printer.printDeclResultTypePre(decl, elementTy);
   Printer.callPrintStructurePre(PrintStructureKind::FunctionReturnType);
 
@@ -3771,8 +3779,11 @@ public:
   }
 
   void visitErrorType(ErrorType *T) {
-    if (auto originalType = T->getOriginalType())
+    if (auto originalType = T->getOriginalType()) {
+      if (Options.PrintInSILBody)
+        Printer << "@error_type ";
       visit(originalType);
+    }
     else
       Printer << "<<error type>>";
   }
@@ -4238,6 +4249,12 @@ public:
     llvm_unreachable("bad convention");
   }
 
+  void printSILAsyncAttr(bool isAsync) {
+    if (isAsync) {
+      Printer << "@async ";
+    }
+  }
+
   void printCalleeConvention(ParameterConvention conv) {
     switch (conv) {
     case ParameterConvention::Direct_Unowned:
@@ -4260,6 +4277,7 @@ public:
 
   void visitSILFunctionType(SILFunctionType *T) {
     printSILCoroutineKind(T->getCoroutineKind());
+    printSILAsyncAttr(T->isAsync());
     printFunctionExtInfo(T->getASTContext(), T->getExtInfo(),
                          T->getWitnessMethodConformanceOrInvalid());
     printCalleeConvention(T->getCalleeConvention());

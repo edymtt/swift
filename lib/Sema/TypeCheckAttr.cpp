@@ -257,6 +257,22 @@ public:
   void visitDifferentiableAttr(DifferentiableAttr *attr);
   void visitDerivativeAttr(DerivativeAttr *attr);
   void visitTransposeAttr(TransposeAttr *attr);
+
+  void visitAsyncHandlerAttr(AsyncHandlerAttr *attr) {
+    if (!Ctx.LangOpts.EnableExperimentalConcurrency) {
+      diagnoseAndRemoveAttr(attr, diag::asynchandler_attr_requires_concurrency);
+      return;
+    }
+
+    auto func = dyn_cast<FuncDecl>(D);
+    if (!func) {
+      diagnoseAndRemoveAttr(attr, diag::asynchandler_non_func);
+      return;
+    }
+
+    // Trigger the request to check for @asyncHandler.
+    (void)func->isAsyncHandler();
+  }
 };
 } // end anonymous namespace
 
@@ -1893,19 +1909,15 @@ SynthesizeMainFunctionRequest::evaluate(Evaluator &evaluator,
     mainFunction = viableCandidates[0];
   }
 
-  auto *func = FuncDecl::create(
-      context, /*StaticLoc*/ SourceLoc(), StaticSpellingKind::KeywordStatic,
-      /*FuncLoc*/ SourceLoc(),
+  auto *const func = FuncDecl::createImplicit(
+      context, StaticSpellingKind::KeywordStatic,
       DeclName(context, DeclBaseName(context.Id_MainEntryPoint),
                ParameterList::createEmpty(context)),
-      /*NameLoc*/ SourceLoc(),
-      /*Async*/ false, SourceLoc(),
+      /*NameLoc=*/SourceLoc(),
+      /*Async=*/false,
       /*Throws=*/mainFunction->hasThrows(),
-      /*ThrowsLoc=*/SourceLoc(),
       /*GenericParams=*/nullptr, ParameterList::createEmpty(context),
-      /*FnRetType=*/TypeLoc::withoutLoc(TupleType::getEmpty(context)),
-      declContext);
-  func->setImplicit(true);
+      /*FnRetType=*/TupleType::getEmpty(context), declContext);
   func->setSynthesized(true);
 
   auto *params = context.Allocate<MainTypeAttrParams>();
@@ -4770,7 +4782,7 @@ static bool typeCheckDerivativeAttr(ASTContext &Ctx, Decl *D,
     // Emit note with expected differential/pullback type on actual type
     // location.
     auto *tupleReturnTypeRepr =
-        cast<TupleTypeRepr>(derivative->getBodyResultTypeLoc().getTypeRepr());
+        cast<TupleTypeRepr>(derivative->getResultTypeRepr());
     auto *funcEltTypeRepr = tupleReturnTypeRepr->getElementType(1);
     diags
         .diagnose(funcEltTypeRepr->getStartLoc(),

@@ -163,7 +163,6 @@ static FuncDecl *createFuncOrAccessor(ASTContext &ctx, SourceLoc funcLoc,
                                       bool throws,
                                       DeclContext *dc,
                                       ClangNode clangNode) {
-  TypeLoc resultTypeLoc = resultTy ? TypeLoc::withoutLoc(resultTy) : TypeLoc();
   if (accessorInfo) {
     return AccessorDecl::create(ctx, funcLoc,
                                 /*accessorKeywordLoc*/ SourceLoc(),
@@ -175,16 +174,10 @@ static FuncDecl *createFuncOrAccessor(ASTContext &ctx, SourceLoc funcLoc,
                                 /*ThrowsLoc=*/SourceLoc(),
                                 /*GenericParams=*/nullptr,
                                 bodyParams,
-                                resultTypeLoc, dc, clangNode);
+                                resultTy, dc, clangNode);
   } else {
-    return FuncDecl::create(ctx, /*StaticLoc=*/SourceLoc(),
-                            StaticSpellingKind::None,
-                            funcLoc, name, nameLoc,
-                            /*Async=*/false, /*AsyncLoc=*/SourceLoc(),
-                            throws, /*ThrowsLoc=*/SourceLoc(),
-                            /*GenericParams=*/nullptr,
-                            bodyParams,
-                            resultTypeLoc, dc, clangNode);
+    return FuncDecl::createImported(ctx, funcLoc, name, nameLoc, throws,
+                                    bodyParams, resultTy, dc, clangNode);
   }
 }
 
@@ -611,7 +604,7 @@ static void makeEnumRawValueGetter(ClangImporter::Implementation &Impl,
                      /*Throws=*/false,
                      /*ThrowsLoc=*/SourceLoc(),
                      /*GenericParams=*/nullptr, params,
-                     TypeLoc::withoutLoc(rawTy), enumDecl);
+                     rawTy, enumDecl);
   getterDecl->setImplicit();
   getterDecl->setIsObjC(false);
   getterDecl->setIsDynamic(false);
@@ -687,7 +680,7 @@ static AccessorDecl *makeStructRawValueGetter(
                      /*Throws=*/false,
                      /*ThrowsLoc=*/SourceLoc(),
                      /*GenericParams=*/nullptr, params,
-                     TypeLoc::withoutLoc(computedType), structDecl);
+                     computedType, structDecl);
   getterDecl->setImplicit();
   getterDecl->setIsObjC(false);
   getterDecl->setIsDynamic(false);
@@ -717,7 +710,7 @@ static AccessorDecl *makeFieldGetterDecl(ClangImporter::Implementation &Impl,
                      /*Throws=*/false,
                      /*ThrowsLoc=*/SourceLoc(),
                      /*GenericParams=*/nullptr, params,
-                     TypeLoc::withoutLoc(getterType), importedDecl, clangNode);
+                     getterType, importedDecl, clangNode);
   getterDecl->setAccess(AccessLevel::Public);
   getterDecl->setIsObjC(false);
   getterDecl->setIsDynamic(false);
@@ -750,7 +743,7 @@ static AccessorDecl *makeFieldSetterDecl(ClangImporter::Implementation &Impl,
                      /*Throws=*/false,
                      /*ThrowsLoc=*/SourceLoc(),
                      /*GenericParams=*/nullptr, params,
-                     TypeLoc::withoutLoc(voidTy), importedDecl, clangNode);
+                     voidTy, importedDecl, clangNode);
   setterDecl->setIsObjC(false);
   setterDecl->setIsDynamic(false);
   setterDecl->setSelfAccessKind(SelfAccessKind::Mutating);
@@ -1684,8 +1677,7 @@ buildSubscriptGetterDecl(ClangImporter::Implementation &Impl,
                      /*Throws=*/false,
                      /*ThrowsLoc=*/SourceLoc(),
                      /*GenericParams=*/nullptr,
-                     params,
-                     TypeLoc::withoutLoc(elementTy), dc,
+                     params, elementTy, dc,
                      getter->getClangNode());
 
   thunk->setAccess(getOverridableAccessLevel(dc));
@@ -1737,7 +1729,7 @@ buildSubscriptSetterDecl(ClangImporter::Implementation &Impl,
                      /*ThrowsLoc=*/SourceLoc(),
                      /*GenericParams=*/nullptr,
                      valueIndicesPL,
-                     TypeLoc::withoutLoc(TupleType::getEmpty(C)), dc,
+                     TupleType::getEmpty(C), dc,
                      setter->getClangNode());
 
   thunk->setAccess(getOverridableAccessLevel(dc));
@@ -1922,7 +1914,7 @@ static bool addErrorDomain(NominalTypeDecl *swiftDecl,
                      /*ThrowsLoc=*/SourceLoc(),
                      /*GenericParams=*/nullptr,
                      params,
-                     TypeLoc::withoutLoc(stringTy), swiftDecl);
+                     stringTy, swiftDecl);
   getterDecl->setIsObjC(false);
   getterDecl->setIsDynamic(false);
   getterDecl->setIsTransparent(false);
@@ -3477,14 +3469,33 @@ namespace {
 
     Decl *VisitClassTemplateSpecializationDecl(
                  const clang::ClassTemplateSpecializationDecl *decl) {
-      // FIXME: We could import specializations, but perhaps only as unnamed
-      // structural types.
-      return nullptr;
+      // `Sema::isCompleteType` will try to instantiate the class template as a
+      // side-effect and we rely on this here. `decl->getDefinition()` can
+      // return nullptr before the call to sema and return its definition
+      // afterwards.
+      if (!Impl.getClangSema().isCompleteType(
+              decl->getLocation(),
+              Impl.getClangASTContext().getRecordType(decl))) {
+        // If we got nullptr definition now it means the type is not complete.
+        // We don't import incomplete types.
+        return nullptr;
+      }
+      auto def = dyn_cast<clang::ClassTemplateSpecializationDecl>(
+          decl->getDefinition());
+      assert(def && "Class template instantiation didn't have definition");
+      // FIXME: This will instantiate all members of the specialization (and detect
+      // instantiation failures in them), which can be more than is necessary
+      // and is more than what Clang does. As a result we reject some C++
+      // programs that Clang accepts.
+      Impl.getClangSema().InstantiateClassTemplateSpecializationMembers(
+          def->getLocation(), def, clang::TSK_ExplicitInstantiationDefinition);
+
+      return VisitRecordDecl(def);
     }
 
     Decl *VisitClassTemplatePartialSpecializationDecl(
-                 const clang::ClassTemplatePartialSpecializationDecl *decl) {
-      // Note: templates are not imported.
+        const clang::ClassTemplatePartialSpecializationDecl *decl) {
+      // Note: partial template specializations are not imported.
       return nullptr;
     }
 
@@ -4399,17 +4410,6 @@ namespace {
         }
       }
 
-      auto result = createFuncOrAccessor(Impl.SwiftContext,
-                                         /*funcLoc*/SourceLoc(),
-                                         accessorInfo,
-                                         importedName.getDeclName(),
-                                         /*nameLoc*/SourceLoc(),
-                                         bodyParams, Type(),
-                                         importedName.getErrorInfo().hasValue(),
-                                         dc, decl);
-
-      result->setAccess(getOverridableAccessLevel(dc));
-
       auto resultTy = importedType.getType();
       auto isIUO = importedType.isImplicitlyUnwrapped();
 
@@ -4433,8 +4433,16 @@ namespace {
         }
       }
 
-      // Record the return type.
-      result->getBodyResultTypeLoc().setType(resultTy);
+      auto result = createFuncOrAccessor(Impl.SwiftContext,
+                                         /*funcLoc*/SourceLoc(),
+                                         accessorInfo,
+                                         importedName.getDeclName(),
+                                         /*nameLoc*/SourceLoc(),
+                                         bodyParams, resultTy,
+                                         importedName.getErrorInfo().hasValue(),
+                                         dc, decl);
+
+      result->setAccess(getOverridableAccessLevel(dc));
 
       // Optional methods in protocols.
       if (decl->getImplementationControl() == clang::ObjCMethodDecl::Optional &&
@@ -6864,12 +6872,14 @@ SwiftDeclConverter::importSubscript(Decl *decl,
   auto &C = Impl.SwiftContext;
   auto bodyParams = ParameterList::create(C, getterIndex);
   DeclName name(C, DeclBaseName::createSubscript(), {Identifier()});
-  auto subscript = Impl.createDeclWithClangNode<SubscriptDecl>(
-      getter->getClangNode(), getOverridableAccessLevel(dc), name,
-      /*StaticLoc=*/SourceLoc(), StaticSpellingKind::None,
-      decl->getLoc(), bodyParams, decl->getLoc(),
-      TypeLoc::withoutLoc(elementTy), dc,
-      /*GenericParams=*/nullptr);
+  auto *const subscript = SubscriptDecl::createImported(C,
+                                                        name, decl->getLoc(),
+                                                        bodyParams, decl->getLoc(),
+                                                        elementTy, dc,
+                                                        getter->getClangNode());
+  const auto access = getOverridableAccessLevel(dc);
+  subscript->setAccess(access);
+  subscript->setSetterAccess(access);
 
   // Build the thunks.
   AccessorDecl *getterThunk =
@@ -8538,8 +8548,7 @@ ClangImporter::Implementation::createConstant(Identifier name, DeclContext *dc,
                      /*Throws=*/false,
                      /*ThrowsLoc=*/SourceLoc(),
                      /*GenericParams=*/nullptr,
-                     params,
-                     TypeLoc::withoutLoc(type), dc);
+                     params, type, dc);
   func->setStatic(isStatic);
   func->setAccess(getOverridableAccessLevel(dc));
   func->setIsObjC(false);
@@ -8885,7 +8894,7 @@ ClangImporter::getEnumConstantName(const clang::EnumConstantDecl *enumConstant){
 // linkage dependency.
 
 struct ClangDeclTraceFormatter : public UnifiedStatsReporter::TraceFormatter {
-  void traceName(const void *Entity, raw_ostream &OS) const {
+  void traceName(const void *Entity, raw_ostream &OS) const override {
     if (!Entity)
       return;
     const clang::Decl *CD = static_cast<const clang::Decl *>(Entity);
@@ -8908,7 +8917,7 @@ struct ClangDeclTraceFormatter : public UnifiedStatsReporter::TraceFormatter {
   }
 
   void traceLoc(const void *Entity, SourceManager *SM,
-                clang::SourceManager *CSM, raw_ostream &OS) const {
+                clang::SourceManager *CSM, raw_ostream &OS) const override {
     if (!Entity)
       return;
     if (CSM) {

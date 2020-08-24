@@ -94,6 +94,7 @@ CanSILFunctionType SILFunctionType::getUnsubstitutedType(SILModule &M) const {
                                    : CanGenericSignature();
   return SILFunctionType::get(signature,
                               getExtInfo(),
+                              isAsync(),
                               getCoroutineKind(),
                               getCalleeConvention(),
                               params, yields, results, errorResult,
@@ -287,11 +288,11 @@ SILFunctionType::getWithDifferentiability(DifferentiabilityKind kind,
   }
   auto newExtInfo =
       getExtInfo().intoBuilder().withDifferentiabilityKind(kind).build();
-  return get(getInvocationGenericSignature(), newExtInfo, getCoroutineKind(),
-             getCalleeConvention(), newParameters, getYields(), newResults,
-             getOptionalErrorResult(), getPatternSubstitutions(),
-             getInvocationSubstitutions(), getASTContext(),
-             getWitnessMethodConformanceOrInvalid());
+  return get(getInvocationGenericSignature(), newExtInfo, isAsync(),
+             getCoroutineKind(), getCalleeConvention(), newParameters,
+             getYields(), newResults, getOptionalErrorResult(),
+             getPatternSubstitutions(), getInvocationSubstitutions(),
+             getASTContext(), getWitnessMethodConformanceOrInvalid());
 }
 
 CanSILFunctionType SILFunctionType::getWithoutDifferentiability() {
@@ -311,9 +312,9 @@ CanSILFunctionType SILFunctionType::getWithoutDifferentiability() {
     newResults.push_back(result.getWithDifferentiability(
         SILResultDifferentiability::DifferentiableOrNotApplicable));
   return SILFunctionType::get(
-      getInvocationGenericSignature(), nondiffExtInfo, getCoroutineKind(),
-      getCalleeConvention(), newParams, getYields(), newResults,
-      getOptionalErrorResult(), getPatternSubstitutions(),
+      getInvocationGenericSignature(), nondiffExtInfo, isAsync(),
+      getCoroutineKind(), getCalleeConvention(), newParams, getYields(),
+      newResults, getOptionalErrorResult(), getPatternSubstitutions(),
       getInvocationSubstitutions(), getASTContext());
 }
 
@@ -407,6 +408,7 @@ static CanSILFunctionType getAutoDiffDifferentialType(
     // result's convention is indirect.
     if (tl.isAddressOnly() && !isIndirectFormalResult(origResConv)) {
       switch (origResConv) {
+      case ResultConvention::Unowned:
       case ResultConvention::Owned:
         return ResultConvention::Indirect;
       default:
@@ -501,9 +503,9 @@ static CanSILFunctionType getAutoDiffDifferentialType(
                              llvm::makeArrayRef(substConformances));
   }
   return SILFunctionType::get(
-      GenericSignature(), SILFunctionType::ExtInfo(), SILCoroutineKind::None,
-      ParameterConvention::Direct_Guaranteed, differentialParams, {},
-      differentialResults, None, substitutions,
+      GenericSignature(), SILFunctionType::ExtInfo(), /*isAsync*/ false,
+      SILCoroutineKind::None, ParameterConvention::Direct_Guaranteed,
+      differentialParams, {}, differentialResults, None, substitutions,
       /*invocationSubstitutions*/ SubstitutionMap(), ctx);
 }
 
@@ -680,9 +682,9 @@ static CanSILFunctionType getAutoDiffPullbackType(
                              llvm::makeArrayRef(substConformances));
   }
   return SILFunctionType::get(
-      GenericSignature(), SILFunctionType::ExtInfo(), SILCoroutineKind::None,
-      ParameterConvention::Direct_Guaranteed, pullbackParams, {},
-      pullbackResults, None, substitutions,
+      GenericSignature(), SILFunctionType::ExtInfo(), /*isAsync*/ false,
+      SILCoroutineKind::None, ParameterConvention::Direct_Guaranteed,
+      pullbackParams, {}, pullbackResults, None, substitutions,
       /*invocationSubstitutions*/ SubstitutionMap(), ctx);
 }
 
@@ -736,7 +738,7 @@ static SILFunctionType *getConstrainedAutoDiffOriginalFunctionType(
       constrainedInvocationGenSig->areAllParamsConcrete()
           ? GenericSignature()
           : constrainedInvocationGenSig,
-      original->getExtInfo(), original->getCoroutineKind(),
+      original->getExtInfo(), original->isAsync(), original->getCoroutineKind(),
       original->getCalleeConvention(), newParameters, original->getYields(),
       newResults, original->getOptionalErrorResult(),
       /*patternSubstitutions*/ SubstitutionMap(),
@@ -827,6 +829,7 @@ CanSILFunctionType SILFunctionType::getAutoDiffDerivativeFunctionType(
   // cache and return.
   cachedResult = SILFunctionType::get(
       constrainedOriginalFnTy->getSubstGenericSignature(), extInfo,
+      constrainedOriginalFnTy->isAsync(),
       constrainedOriginalFnTy->getCoroutineKind(),
       constrainedOriginalFnTy->getCalleeConvention(), newParameters,
       constrainedOriginalFnTy->getYields(), newResults,
@@ -912,9 +915,9 @@ CanSILFunctionType SILFunctionType::getAutoDiffTransposeFunctionType(
   for (auto &res : getResults())
     newParameters.push_back(getParameterInfoForOriginalResult(res));
   return SILFunctionType::get(
-      getInvocationGenericSignature(), getExtInfo(), getCoroutineKind(),
-      getCalleeConvention(), newParameters, getYields(), newResults,
-      getOptionalErrorResult(), getPatternSubstitutions(),
+      getInvocationGenericSignature(), getExtInfo(), isAsync(),
+      getCoroutineKind(), getCalleeConvention(), newParameters, getYields(),
+      newResults, getOptionalErrorResult(), getPatternSubstitutions(),
       /*invocationSubstitutions*/ {}, getASTContext());
 }
 
@@ -988,7 +991,8 @@ Lowering::adjustFunctionType(CanSILFunctionType type,
     return type;
 
   return SILFunctionType::get(type->getInvocationGenericSignature(),
-                              extInfo, type->getCoroutineKind(), callee,
+                              extInfo, type->isAsync(),
+                              type->getCoroutineKind(), callee,
                               type->getParameters(), type->getYields(),
                               type->getResults(),
                               type->getOptionalErrorResult(),
@@ -1015,9 +1019,9 @@ CanSILFunctionType SILFunctionType::getWithExtInfo(ExtInfo newExt) {
             : Lowering::DefaultThickCalleeConvention)
        : ParameterConvention::Direct_Unowned);
 
-  return get(getInvocationGenericSignature(), newExt, getCoroutineKind(),
-             calleeConvention, getParameters(), getYields(), getResults(),
-             getOptionalErrorResult(), getPatternSubstitutions(),
+  return get(getInvocationGenericSignature(), newExt, isAsync(),
+             getCoroutineKind(), calleeConvention, getParameters(), getYields(),
+             getResults(), getOptionalErrorResult(), getPatternSubstitutions(),
              getInvocationSubstitutions(), getASTContext(),
              getWitnessMethodConformanceOrInvalid());
 }
@@ -1214,8 +1218,6 @@ public:
         substRequirements.push_back(
                       Requirement(RequirementKind::Layout, param, layout));
       }
-    } else {
-      (void)0;
     }
     
     for (unsigned i : indices(upperBoundConformances)) {
@@ -1304,7 +1306,7 @@ public:
     if (origContextType->hasTypeParameter()) {
       origContextType = origSig->getGenericEnvironment()
         ->mapTypeIntoContext(origContextType)
-        ->getCanonicalType(origSig);
+        ->getCanonicalType();
     }
 
     auto result = origContextType
@@ -1313,12 +1315,7 @@ public:
             CanType binding,
             ArchetypeType *upperBound,
             ArrayRef<ProtocolConformanceRef> bindingConformances) -> CanType {
-          // TODO: ArchetypeType::getLayoutConstraint sometimes misses out on
-          // implied layout constraints. For now AnyObject is the only one we
-          // care about.
-          return addSubstitution(archetype->requiresClass()
-                                   ? LayoutConstraint::getLayoutConstraint(LayoutConstraintKind::Class)
-                                   : LayoutConstraint(),
+          return addSubstitution(archetype->getLayoutConstraint(),
                                  binding,
                                  upperBound,
                                  bindingConformances);
@@ -2172,7 +2169,8 @@ static CanSILFunctionType getSILFunctionType(
     }
   }
   
-  return SILFunctionType::get(genericSig, silExtInfo, coroutineKind,
+  return SILFunctionType::get(genericSig, silExtInfo,
+                              substFnInterfaceType->isAsync(), coroutineKind,
                               calleeConvention, inputs, yields,
                               results, errorResult,
                               substitutions, SubstitutionMap(),
@@ -2400,6 +2398,12 @@ static CanSILFunctionType getNativeSILFunctionType(
     Optional<SubstitutionMap> reqtSubs,
     ProtocolConformanceRef witnessMethodConformance) {
   assert(bool(origConstant) == bool(constant));
+  auto getSILFunctionTypeForConventions =
+      [&](const Conventions &convs) -> CanSILFunctionType {
+    return getSILFunctionType(TC, context, origType, substInterfaceType,
+                              extInfo, convs, ForeignInfo(), origConstant,
+                              constant, reqtSubs, witnessMethodConformance);
+  };
   switch (extInfo.getSILRepresentation()) {
   case SILFunctionType::Representation::Block:
   case SILFunctionType::Representation::CFunctionPointer:
@@ -2416,42 +2420,29 @@ static CanSILFunctionType getNativeSILFunctionType(
     switch (constant ? constant->kind : SILDeclRef::Kind::Func) {
     case SILDeclRef::Kind::Initializer:
     case SILDeclRef::Kind::EnumElement:
-      return getSILFunctionType(TC, context, origType, substInterfaceType,
-                                extInfo, DefaultInitializerConventions(),
-                                ForeignInfo(), origConstant, constant, reqtSubs,
-                                witnessMethodConformance);
+      return getSILFunctionTypeForConventions(DefaultInitializerConventions());
     case SILDeclRef::Kind::Allocator:
-      return getSILFunctionType(TC, context, origType, substInterfaceType,
-                                extInfo, DefaultAllocatorConventions(),
-                                ForeignInfo(), origConstant, constant, reqtSubs,
-                                witnessMethodConformance);
-    case SILDeclRef::Kind::Func:
+      return getSILFunctionTypeForConventions(DefaultAllocatorConventions());
+    case SILDeclRef::Kind::Func: {
       // If we have a setter, use the special setter convention. This ensures
       // that we take normal parameters at +1.
       if (constant && constant->isSetter()) {
-        return getSILFunctionType(TC, context, origType, substInterfaceType,
-                                  extInfo, DefaultSetterConventions(),
-                                  ForeignInfo(), origConstant, constant,
-                                  reqtSubs, witnessMethodConformance);
+        return getSILFunctionTypeForConventions(DefaultSetterConventions());
       }
-      LLVM_FALLTHROUGH;
+      return getSILFunctionTypeForConventions(
+          DefaultConventions(NormalParameterConvention::Guaranteed));
+    }
     case SILDeclRef::Kind::Destroyer:
     case SILDeclRef::Kind::GlobalAccessor:
     case SILDeclRef::Kind::DefaultArgGenerator:
     case SILDeclRef::Kind::StoredPropertyInitializer:
     case SILDeclRef::Kind::PropertyWrapperBackingInitializer:
     case SILDeclRef::Kind::IVarInitializer:
-    case SILDeclRef::Kind::IVarDestroyer: {
-      auto conv = DefaultConventions(NormalParameterConvention::Guaranteed);
-      return getSILFunctionType(TC, context, origType, substInterfaceType,
-                                extInfo, conv, ForeignInfo(), origConstant,
-                                constant, reqtSubs, witnessMethodConformance);
-    }
+    case SILDeclRef::Kind::IVarDestroyer:
+      return getSILFunctionTypeForConventions(
+          DefaultConventions(NormalParameterConvention::Guaranteed));
     case SILDeclRef::Kind::Deallocator:
-      return getSILFunctionType(TC, context, origType, substInterfaceType,
-                                extInfo, DeallocatorConventions(),
-                                ForeignInfo(), origConstant, constant, reqtSubs,
-                                witnessMethodConformance);
+      return getSILFunctionTypeForConventions(DeallocatorConventions());
     }
   }
   }
@@ -3769,7 +3760,7 @@ public:
                         ? origType->getInvocationGenericSignature()
                         : nullptr;
 
-    return SILFunctionType::get(genericSig, extInfo,
+    return SILFunctionType::get(genericSig, extInfo, origType->isAsync(),
                                 origType->getCoroutineKind(),
                                 origType->getCalleeConvention(), substParams,
                                 substYields, substResults, substErrorResult,
@@ -4477,19 +4468,9 @@ StringRef SILFunctionType::ABICompatibilityCheckResult::getMessage() const {
   llvm_unreachable("Covered switch isn't completely covered?!");
 }
 
-static DeclContext *getDeclContextForExpansion(const SILFunction &f) {
-  auto *dc = f.getDeclContext();
-  if (!dc)
-    dc = f.getModule().getSwiftModule();
-  auto *currentModule = f.getModule().getSwiftModule();
-  if (!dc || !dc->isChildContextOf(currentModule))
-    dc = currentModule;
-  return dc;
-}
-
 TypeExpansionContext::TypeExpansionContext(const SILFunction &f)
     : expansion(f.getResilienceExpansion()),
-      inContext(getDeclContextForExpansion(f)),
+      inContext(f.getModule().getAssociatedContext()),
       isContextWholeModule(f.getModule().isWholeModule()) {}
 
 CanSILFunctionType SILFunction::getLoweredFunctionTypeInContext(

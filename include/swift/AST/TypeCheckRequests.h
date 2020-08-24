@@ -781,6 +781,24 @@ public:
   void cacheResult(SelfAccessKind value) const;
 };
 
+/// Determine whether the given function is an @asyncHandler.
+class IsAsyncHandlerRequest :
+    public SimpleRequest<IsAsyncHandlerRequest,
+                         bool(FuncDecl *),
+                         RequestFlags::Cached> {
+public:
+  using SimpleRequest::SimpleRequest;
+
+private:
+  friend SimpleRequest;
+
+  bool evaluate(Evaluator &evaluator, FuncDecl *func) const;
+
+public:
+  // Caching
+  bool isCached() const { return true; }
+};
+
 /// Request whether the storage has a mutating getter.
 class IsGetterMutatingRequest :
     public SimpleRequest<IsGetterMutatingRequest,
@@ -1431,8 +1449,6 @@ public:
 private:
   friend SimpleRequest;
 
-  TypeLoc &getResultTypeLoc() const;
-
   // Evaluation.
   Type evaluate(Evaluator &evaluator, ValueDecl *decl) const;
 
@@ -1825,6 +1841,7 @@ public:
 
 struct PreCheckFunctionBuilderDescriptor {
   AnyFunctionRef Fn;
+  bool SuppressDiagnostics;
 
 private:
   // NOTE: Since source tooling (e.g. code completion) might replace the body,
@@ -1834,8 +1851,8 @@ private:
   BraceStmt *Body;
 
 public:
-  PreCheckFunctionBuilderDescriptor(AnyFunctionRef Fn)
-      : Fn(Fn), Body(Fn.getBody()) {}
+  PreCheckFunctionBuilderDescriptor(AnyFunctionRef Fn, bool suppressDiagnostics)
+      : Fn(Fn), SuppressDiagnostics(suppressDiagnostics), Body(Fn.getBody()) {}
 
   friend llvm::hash_code
   hash_value(const PreCheckFunctionBuilderDescriptor &owner) {

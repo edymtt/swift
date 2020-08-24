@@ -2397,7 +2397,7 @@ public:
       break;
     }
     *this << "] ";
-    *this << getIDAndType(lfei->getFunctionOperand());
+    *this << getIDAndType(lfei->getOperand());
   }
 
   void visitDifferentiabilityWitnessFunctionInst(
@@ -2597,9 +2597,6 @@ void SILFunction::print(SILPrintContext &PrintCtx) const {
   }
   if (isWithoutActuallyEscapingThunk())
     OS << "[without_actually_escaping] ";
-
-  if (isAsync())
-    OS << "[async] ";
 
   switch (getSpecialPurpose()) {
   case SILFunction::Purpose::None:

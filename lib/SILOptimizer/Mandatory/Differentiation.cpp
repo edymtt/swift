@@ -158,8 +158,7 @@ static bool diagnoseNoReturn(ADContext &context, SILFunction *original,
 /// flow unsupported" error at appropriate source locations. Returns true if
 /// error is emitted.
 ///
-/// Update as control flow support is added. Currently, branching terminators
-/// other than `br`, `cond_br`, `switch_enum` are not supported.
+/// Update as control flow support is added.
 static bool diagnoseUnsupportedControlFlow(ADContext &context,
                                            SILFunction *original,
                                            DifferentiationInvoker invoker) {
@@ -173,7 +172,7 @@ static bool diagnoseUnsupportedControlFlow(ADContext &context,
         isa<SwitchEnumInst>(term) || isa<SwitchEnumAddrInst>(term) ||
         isa<CheckedCastBranchInst>(term) ||
         isa<CheckedCastValueBranchInst>(term) ||
-        isa<CheckedCastAddrBranchInst>(term))
+        isa<CheckedCastAddrBranchInst>(term) || isa<TryApplyInst>(term))
       continue;
     // If terminator is an unsupported branching terminator, emit an error.
     if (term->isBranch()) {
@@ -873,7 +872,8 @@ static void emitFatalError(ADContext &context, SILFunction *f,
   // Fatal error function must have type `@convention(thin) () -> Never`.
   auto fatalErrorFnType = SILFunctionType::get(
       /*genericSig*/ nullptr, SILFunctionType::ExtInfo::getThin(),
-      SILCoroutineKind::None, ParameterConvention::Direct_Unowned, {},
+      /*isAsync*/ false, SILCoroutineKind::None,
+      ParameterConvention::Direct_Unowned, {},
       /*interfaceYields*/ {}, neverResultInfo,
       /*interfaceErrorResults*/ None, {}, {}, context.getASTContext());
   auto fnBuilder = SILOptFunctionBuilder(context.getTransform());
@@ -1025,10 +1025,10 @@ static SILValue promoteCurryThunkApplicationToDifferentiableFunction(
   auto newThunkResult = thunkResult.getWithInterfaceType(diffResultFnTy);
   auto thunkType = SILFunctionType::get(
       thunkTy->getSubstGenericSignature(), thunkTy->getExtInfo(),
-      thunkTy->getCoroutineKind(), thunkTy->getCalleeConvention(),
-      thunkTy->getParameters(), {}, {newThunkResult}, {},
-      thunkTy->getPatternSubstitutions(), thunkTy->getInvocationSubstitutions(),
-      thunkTy->getASTContext());
+      thunkTy->isAsync(), thunkTy->getCoroutineKind(),
+      thunkTy->getCalleeConvention(), thunkTy->getParameters(), {},
+      {newThunkResult}, {}, thunkTy->getPatternSubstitutions(),
+      thunkTy->getInvocationSubstitutions(), thunkTy->getASTContext());
 
   // Construct new curry thunk, returning a `@differentiable` function.
   SILOptFunctionBuilder fb(dt.getTransform());
@@ -1330,7 +1330,7 @@ bool DifferentiationTransformer::processLinearFunctionInst(
                                    cast<SILInstruction>(lfi));
   PrettyStackTraceSILFunction fnTrace("...in", lfi->getFunction());
   LLVM_DEBUG({
-    auto &s = getADDebugStream() << "Processing LinearFunctoinInst:\n";
+    auto &s = getADDebugStream() << "Processing LinearFunctionInst:\n";
     lfi->printInContext(s);
   });
 
@@ -1385,8 +1385,8 @@ void Differentiation::run() {
         if (auto *dfi = dyn_cast<DifferentiableFunctionInst>(&i)) {
           context.getDifferentiableFunctionInstWorklist().push_back(dfi);
         } else if (auto *lfi = dyn_cast<LinearFunctionInst>(&i)) {
-          // If linear map transposition is not enable and an uncanonical
-          // `linear_function` instruction is encounter, emit a diagnostic.
+          // If linear map transposition is not enabled and an uncanonical
+          // `linear_function` instruction is encountered, emit a diagnostic.
           // FIXME(SR-11850): Finish support for linear map transposition.
           if (!EnableExperimentalLinearMapTransposition) {
             if (!lfi->hasTransposeFunction()) {
