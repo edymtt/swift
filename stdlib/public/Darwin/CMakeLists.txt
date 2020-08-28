@@ -42,10 +42,42 @@ message(STATUS "Experimental build for foundation overlay: ${SWIFT_ENABLE_EXPERI
 if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
   #add CoreFoundation in a different way
   include(ExternalProject)
+
+  set(build_type "xcode")
+
+  if(${build_type} STREQUAL "xcode")
+    # Second idea: Xcode project
+    #FIXME: set SWIFT_EXEC
+    # FIXME: set correct oputput folder
+    ExternalProject_Add(CoreFoundationOverlay
+      SOURCE_DIR "${CMAKE_SOURCE_DIR}/../foundation-swiftoverlay"
+      INSTALL_DIR  ${SWIFTLIB_DIR}/macosx   # ${CMAKE_CURRENT_BINARY_DIR}/CoreFoundation
+      CONFIGURE_COMMAND ""
+      BUILD_COMMAND xcodebuild -target CoreFoundation-swiftoverlay -sdk macosx SYMROOT=<TMP_DIR> OBJROOT=<TMP_DIR> 
+      # FIXME SWIFT_EXEC=${SWIFT_NATIVE_SWIFT_TOOLS_PATH}/swiftc
+      BUILD_IN_SOURCE TRUE
+      INSTALL_COMMAND ditto <TMP_DIR>/Release <INSTALL_DIR>
+      BUILD_BYPRODUCTS <INSTALL_DIR>/CoreFoundation.swiftmodule
+      <INSTALL_DIR>/libswiftCoreFoundation.dylib
+                          )
+  else()
+
+  # First idea: CMake project
+  #FIXME likely try with newer CMake
+  #FIXME match flags
   ExternalProject_Add(CoreFoundationOverlay
       SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CoreFoundation"
       INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:STRING=<INSTALL_DIR>)
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:STRING=<INSTALL_DIR>
+-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+                          -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
+                          -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+                          -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
+                          -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+                          -DCMAKE_Swift_COMPILER="${SWIFT_NATIVE_SWIFT_TOOLS_PATH}/swiftc"
+                          )
+                  endif()
+
 
   add_dependencies(sdk-overlay CoreFoundationOverlay)
 endif()

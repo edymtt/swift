@@ -4,8 +4,9 @@ if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
 if(COREFOUNDATION_OVERLAY_BUILT_STANDALONE OR SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
-    cmake_minimum_required(VERSION 3.15.1)
-    project(CoreFoundationOverlay LANGUAGES Swift C)
+    # CMake 3.15.1 fails when testing the Swift compiler during configuration
+    cmake_minimum_required(VERSION 3.16.5)
+    project(CoreFoundationOverlay LANGUAGES C Swift) 
 
     option(BUILD_SHARED_LIBS "Build shared libraries by default" YES)
     add_library(swiftCoreFoundation
