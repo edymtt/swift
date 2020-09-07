@@ -945,21 +945,32 @@ Type TypeChecker::applyUnboundGenericArguments(GenericTypeDecl *decl,
 
 /// Diagnose a use of an unbound generic type.
 static void diagnoseUnboundGenericType(Type ty, SourceLoc loc) {
-  auto unbound = ty->castTo<UnboundGenericType>();
-  {
-    auto &ctx = ty->getASTContext();
-    InFlightDiagnostic diag = ctx.Diags.diagnose(loc,
-        diag::generic_type_requires_arguments, ty);
-    if (auto *genericD = unbound->getDecl()) {
+  auto &ctx = ty->getASTContext();
+  if (auto unbound = ty->getAs<UnboundGenericType>()) {
+    auto *decl = unbound->getDecl();
+    {
+      InFlightDiagnostic diag = ctx.Diags.diagnose(loc,
+          diag::generic_type_requires_arguments, ty);
       SmallString<64> genericArgsToAdd;
       if (TypeChecker::getDefaultGenericArgumentsString(genericArgsToAdd,
-                                                        genericD))
+                                                        decl))
         diag.fixItInsertAfter(loc, genericArgsToAdd);
     }
+
+    decl->diagnose(diag::kind_declname_declared_here,
+                   DescriptiveDeclKind::GenericType,
+                   decl->getName());
+  } else {
+    ty.findIf([&](Type t) -> bool {
+      if (auto unbound = t->getAs<UnboundGenericType>()) {
+        ctx.Diags.diagnose(loc,
+            diag::generic_type_requires_arguments, t);
+        return true;
+      }
+
+      return false;
+    });
   }
-  unbound->getDecl()->diagnose(diag::kind_declname_declared_here,
-                               DescriptiveDeclKind::GenericType,
-                               unbound->getDecl()->getName());
 }
 
 // Produce a diagnostic if the type we referenced was an
@@ -1417,22 +1428,29 @@ static Type resolveNestedIdentTypeComponent(TypeResolution resolution,
 
   auto maybeDiagnoseBadMemberType = [&](TypeDecl *member, Type memberType,
                                         AssociatedTypeDecl *inferredAssocType) {
-    // Diagnose invalid cases.
-    if (TypeChecker::isUnsupportedMemberTypeAccess(parentTy, member)) {
-      if (!options.contains(TypeResolutionFlags::SilenceErrors)) {
-        if (parentTy->is<UnboundGenericType>())
-          diagnoseUnboundGenericType(parentTy, parentRange.End);
-        else if (parentTy->isExistentialType() &&
-                 isa<AssociatedTypeDecl>(member)) {
-          diags.diagnose(comp->getNameLoc(), diag::assoc_type_outside_of_protocol,
-                         comp->getNameRef());
-        } else if (parentTy->isExistentialType() &&
-                   isa<TypeAliasDecl>(member)) {
-          diags.diagnose(comp->getNameLoc(), diag::typealias_outside_of_protocol,
-                         comp->getNameRef());
-        }
-      }
+    if (options.contains(TypeResolutionFlags::SilenceErrors)) {
+      if (TypeChecker::isUnsupportedMemberTypeAccess(parentTy, member)
+            != TypeChecker::UnsupportedMemberTypeAccessKind::None)
+        return ErrorType::get(ctx);
+    }
 
+    switch (TypeChecker::isUnsupportedMemberTypeAccess(parentTy, member)) {
+    case TypeChecker::UnsupportedMemberTypeAccessKind::None:
+      break;
+
+    case TypeChecker::UnsupportedMemberTypeAccessKind::TypeAliasOfUnboundGeneric:
+    case TypeChecker::UnsupportedMemberTypeAccessKind::AssociatedTypeOfUnboundGeneric:
+      diagnoseUnboundGenericType(parentTy, parentRange.End);
+      return ErrorType::get(ctx);
+
+    case TypeChecker::UnsupportedMemberTypeAccessKind::TypeAliasOfExistential:
+      diags.diagnose(comp->getNameLoc(), diag::typealias_outside_of_protocol,
+                     comp->getNameRef());
+      return ErrorType::get(ctx);
+
+    case TypeChecker::UnsupportedMemberTypeAccessKind::AssociatedTypeOfExistential:
+      diags.diagnose(comp->getNameLoc(), diag::assoc_type_outside_of_protocol,
+                     comp->getNameRef());
       return ErrorType::get(ctx);
     }
 
@@ -1749,7 +1767,6 @@ namespace {
 
     Type resolveSILFunctionType(FunctionTypeRepr *repr,
                                 TypeResolutionOptions options,
-                                bool isAsync = false,
                                 SILCoroutineKind coroutineKind
                                   = SILCoroutineKind::None,
                                 SILFunctionType::ExtInfo extInfo
@@ -2147,8 +2164,6 @@ Type TypeResolver::resolveAttributedType(TypeAttributes &attrs,
       SILFunctionType::Representation rep;
       TypeRepr *witnessMethodProtocol = nullptr;
 
-      auto isAsync = attrs.has(TAK_async);
-
       auto coroutineKind = SILCoroutineKind::None;
       if (attrs.has(TAK_yield_once)) {
         coroutineKind = SILCoroutineKind::YieldOnce;
@@ -2227,10 +2242,11 @@ Type TypeResolver::resolveAttributedType(TypeAttributes &attrs,
       // [TODO: Store-SIL-Clang-type]
       auto extInfo = SILFunctionType::ExtInfoBuilder(
                          rep, attrs.has(TAK_pseudogeneric),
-                         attrs.has(TAK_noescape), diffKind, nullptr)
+                         attrs.has(TAK_noescape), attrs.has(TAK_async), 
+                         diffKind, nullptr)
                          .build();
 
-      ty = resolveSILFunctionType(fnRepr, options, isAsync, coroutineKind, extInfo,
+      ty = resolveSILFunctionType(fnRepr, options, coroutineKind, extInfo,
                                   calleeConvention, witnessMethodProtocol);
       if (!ty || ty->hasError())
         return ty;
@@ -2845,7 +2861,6 @@ Type TypeResolver::resolveSILBoxType(SILBoxTypeRepr *repr,
 
 Type TypeResolver::resolveSILFunctionType(FunctionTypeRepr *repr,
                                           TypeResolutionOptions options,
-                                          bool isAsync,
                                           SILCoroutineKind coroutineKind,
                                           SILFunctionType::ExtInfo extInfo,
                                           ParameterConvention callee,
@@ -3040,8 +3055,7 @@ Type TypeResolver::resolveSILFunctionType(FunctionTypeRepr *repr,
            "found witness_method without matching conformance");
   }
 
-  return SILFunctionType::get(genericSig, extInfo, isAsync,
-                              coroutineKind, callee,
+  return SILFunctionType::get(genericSig, extInfo, coroutineKind, callee,
                               interfaceParams, interfaceYields,
                               interfaceResults, interfaceErrorResult,
                               interfacePatternSubs, invocationSubs,

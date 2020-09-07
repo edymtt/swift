@@ -147,7 +147,8 @@ bool ArgsToFrontendOptionsConverter::convert(
     Opts.RequestedAction = determineRequestedAction(Args);
   }
 
-  if (Opts.RequestedAction == FrontendOptions::ActionType::CompileModuleFromInterface) {
+  if (Opts.RequestedAction == FrontendOptions::ActionType::CompileModuleFromInterface ||
+      Opts.RequestedAction == FrontendOptions::ActionType::TypecheckModuleFromInterface) {
     // The situations where we use this action, e.g. explicit module building and
     // generating prebuilt module cache, don't need synchronization. We should avoid
     // using lock files for them.
@@ -391,6 +392,8 @@ ArgsToFrontendOptionsConverter::determineRequestedAction(const ArgList &args) {
     return FrontendOptions::ActionType::Immediate;
   if (Opt.matches(OPT_compile_module_from_interface))
     return FrontendOptions::ActionType::CompileModuleFromInterface;
+  if (Opt.matches(OPT_typecheck_module_from_interface))
+    return FrontendOptions::ActionType::TypecheckModuleFromInterface;
 
   llvm_unreachable("Unhandled mode option");
 }
@@ -403,8 +406,7 @@ bool ArgsToFrontendOptionsConverter::setUpInputKindAndImmediateArgs() {
   if (Opts.InputsAndOutputs.verifyInputs(
           Diags, treatAsSIL,
           Opts.RequestedAction == FrontendOptions::ActionType::REPL,
-          (Opts.RequestedAction == FrontendOptions::ActionType::NoneAction ||
-           Opts.RequestedAction == FrontendOptions::ActionType::PrintVersion))){
+          !FrontendOptions::doesActionRequireInputs(Opts.RequestedAction))) {
     return true;
   }
   if (Opts.RequestedAction == FrontendOptions::ActionType::Immediate) {
@@ -560,6 +562,11 @@ bool ArgsToFrontendOptionsConverter::checkUnusedSupplementaryOutputPaths()
       (Opts.InputsAndOutputs.hasModuleInterfaceOutputPath() ||
        Opts.InputsAndOutputs.hasPrivateModuleInterfaceOutputPath())) {
     Diags.diagnose(SourceLoc(), diag::error_mode_cannot_emit_interface);
+    return true;
+  }
+  if (!FrontendOptions::canActionEmitModuleSummary(Opts.RequestedAction) &&
+      Opts.InputsAndOutputs.hasModuleSummaryOutputPath()) {
+    Diags.diagnose(SourceLoc(), diag::error_mode_cannot_emit_module_summary);
     return true;
   }
   return false;

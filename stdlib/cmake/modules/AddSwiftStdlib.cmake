@@ -306,6 +306,10 @@ function(_add_target_variant_c_compile_flags)
     list(APPEND result "-DSWIFT_RUNTIME_MACHO_NO_DYLD")
   endif()
 
+  if(SWIFT_STDLIB_SINGLE_THREADED_RUNTIME)
+    list(APPEND result "-DSWIFT_STDLIB_SINGLE_THREADED_RUNTIME")
+  endif()
+
   set("${CFLAGS_RESULT_VAR_NAME}" "${result}" PARENT_SCOPE)
 endfunction()
 

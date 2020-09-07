@@ -20,8 +20,8 @@
 
 #include "swift/AST/DeclNameLoc.h"
 #include "swift/AST/DiagnosticConsumer.h"
-#include "swift/AST/LocalizationFormat.h"
 #include "swift/AST/TypeLoc.h"
+#include "swift/Localization/LocalizationFormat.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Allocator.h"
@@ -1058,10 +1058,19 @@ namespace swift {
       }
     }
 
-    bool hasDiagnostics() const {
-      return std::distance(Engine.TentativeDiagnostics.begin() +
-                               PrevDiagnostics,
-                           Engine.TentativeDiagnostics.end()) > 0;
+    bool hasErrors() const {
+      ArrayRef<Diagnostic> diagnostics(Engine.TentativeDiagnostics.begin() +
+                                           PrevDiagnostics,
+                                       Engine.TentativeDiagnostics.end());
+
+      for (auto &diagnostic : diagnostics) {
+        auto behavior = Engine.state.determineBehavior(diagnostic.getID());
+        if (behavior == DiagnosticState::Behavior::Fatal ||
+            behavior == DiagnosticState::Behavior::Error)
+          return true;
+      }
+
+      return false;
     }
 
     /// Abort and close this transaction and erase all diagnostics

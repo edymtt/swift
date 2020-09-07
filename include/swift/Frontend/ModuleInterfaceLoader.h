@@ -285,6 +285,8 @@ private:
 };
 
 struct ModuleInterfaceLoaderOptions {
+  FrontendOptions::ActionType requestedAction =
+      FrontendOptions::ActionType::EmitModuleOnly;
   bool remarkOnRebuildFromInterface = false;
   bool disableInterfaceLock = false;
   bool disableImplicitSwiftModule = false;
@@ -293,7 +295,17 @@ struct ModuleInterfaceLoaderOptions {
     remarkOnRebuildFromInterface(Opts.RemarkOnRebuildFromModuleInterface),
     disableInterfaceLock(Opts.DisableInterfaceFileLock),
     disableImplicitSwiftModule(Opts.DisableImplicitModules),
-    mainExecutablePath(Opts.MainExecutablePath) {}
+    mainExecutablePath(Opts.MainExecutablePath)
+  {
+    switch (Opts.RequestedAction) {
+    case FrontendOptions::ActionType::TypecheckModuleFromInterface:
+      requestedAction = FrontendOptions::ActionType::Typecheck;
+      break;
+    default:
+      requestedAction = FrontendOptions::ActionType::EmitModuleOnly;
+      break;
+    }
+  }
   ModuleInterfaceLoaderOptions() = default;
 };
 
@@ -408,8 +420,8 @@ public:
                                   DiagnosticEngine &Diags,
                                   const SearchPathOptions &searchPathOpts,
                                   const LangOptions &langOpts,
+                                  const ClangImporterOptions &clangImporterOpts,
                                   ModuleInterfaceLoaderOptions LoaderOpts,
-                                  ClangModuleLoader *clangImporter,
                                   bool buildModuleCacheDirIfAbsent,
                                   StringRef moduleCachePath,
                                   StringRef prebuiltCachePath,
@@ -436,7 +448,6 @@ public:
                                     llvm::SmallString<256> &OutPath,
                                     StringRef &CacheHash);
   std::string getCacheHash(StringRef useInterfacePath);
-  void addExtraClangArg(StringRef Arg);
 };
 }
 

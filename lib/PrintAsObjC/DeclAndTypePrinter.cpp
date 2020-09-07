@@ -32,6 +32,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/Basic/CharInfo.h"
+#include "clang/Basic/SourceManager.h"
 
 using namespace swift;
 using namespace swift::objc_translation;
@@ -1909,7 +1910,7 @@ private:
       assert(extension->getGenericSignature().getCanonicalSignature() ==
                  extendedClass->getGenericSignature().getCanonicalSignature() &&
              "constrained extensions or custom generic parameters?");
-      type = extendedClass->getGenericEnvironment()->getSugaredType(type);
+      type = extendedClass->getGenericSignature()->getSugaredType(type);
       decl = type->getDecl();
     }
 
