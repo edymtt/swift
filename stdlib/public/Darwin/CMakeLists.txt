@@ -40,27 +40,33 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
 
   set(build_type "xcode")
 
+
   if(${build_type} STREQUAL "xcode")
     # Second idea: Xcode project
-    #FIXME: set SWIFT_EXEC
     # FIXME: set correct oputput folder
     ExternalProject_Add(CoreFoundationOverlay
       SOURCE_DIR "${CMAKE_SOURCE_DIR}/../foundation-swiftoverlay"
       INSTALL_DIR  ${SWIFTLIB_DIR}/macosx   # ${CMAKE_CURRENT_BINARY_DIR}/CoreFoundation
       CONFIGURE_COMMAND ""
       BUILD_COMMAND xcodebuild -target CoreFoundation-swiftoverlay -sdk macosx SYMROOT=<TMP_DIR> OBJROOT=<TMP_DIR> 
-      # FIXME SWIFT_EXEC=${SWIFT_NATIVE_SWIFT_TOOLS_PATH}/swiftc
+      SWIFT_EXEC=${SWIFT_NATIVE_SWIFT_TOOLS_PATH}/swiftc IS_ZIPPERED=$<IF:$<BOOL:${SWIFT_ENABLE_MACCATALYST}>,YES,NO>
       BUILD_IN_SOURCE TRUE
       INSTALL_COMMAND ditto <TMP_DIR>/Release <INSTALL_DIR>
       BUILD_BYPRODUCTS <INSTALL_DIR>/CoreFoundation.swiftmodule
       <INSTALL_DIR>/libswiftCoreFoundation.dylib
                           )
 
+    # Experiment to see if we can avoid touching existing overlays
     add_custom_target(swiftCoreFoundation-swiftmodule-macosx-x86_64)
     add_custom_target(swiftCoreFoundation-swiftmodule-macosx-arm64)
-    # COMMAND "${CMAKE_COMMAND}" -E true)
+    add_library(swiftCoreFoundation-macosx-arm64 SHARED IMPORTED )
+    add_library(swiftCoreFoundation-macosx-x86_64 SHARED IMPORTED )
+    set_property(TARGET swiftCoreFoundation-macosx-arm64 PROPERTY IMPORTED_LOCATION ${SWIFTLIB_DIR}/macosx/libswiftCoreFoundation.dylib)
+    set_property(TARGET swiftCoreFoundation-macosx-x86_64 PROPERTY IMPORTED_LOCATION ${SWIFTLIB_DIR}/macosx/libswiftCoreFoundation.dylib)
     add_dependencies(swiftCoreFoundation-swiftmodule-macosx-x86_64 CoreFoundationOverlay)
     add_dependencies(swiftCoreFoundation-swiftmodule-macosx-arm64 CoreFoundationOverlay)
+    add_dependencies(swiftCoreFoundation-macosx-arm64 CoreFoundationOverlay)
+    add_dependencies(swiftCoreFoundation-macosx-x86_64 CoreFoundationOverlay)
   else()
 
   # First idea: CMake project
