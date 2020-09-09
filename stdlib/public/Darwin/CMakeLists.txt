@@ -33,11 +33,6 @@ else()
   set(overlays_to_build ${all_overlays})
 endif()
 
-message(STATUS "Building overlays: ${overlays_to_build}")
-foreach(overlay ${overlays_to_build})
-  message(STATUS "INCLUDING OVERLAY: ${overlay}")
-  add_subdirectory(${overlay})
-endforeach()
 message(STATUS "Experimental build for foundation overlay: ${SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD}")
 if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
   #add CoreFoundation in a different way
@@ -60,6 +55,12 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
       BUILD_BYPRODUCTS <INSTALL_DIR>/CoreFoundation.swiftmodule
       <INSTALL_DIR>/libswiftCoreFoundation.dylib
                           )
+
+    add_custom_target(swiftCoreFoundation-swiftmodule-macosx-x86_64)
+    add_custom_target(swiftCoreFoundation-swiftmodule-macosx-arm64)
+    # COMMAND "${CMAKE_COMMAND}" -E true)
+    add_dependencies(swiftCoreFoundation-swiftmodule-macosx-x86_64 CoreFoundationOverlay)
+    add_dependencies(swiftCoreFoundation-swiftmodule-macosx-arm64 CoreFoundationOverlay)
   else()
 
   # First idea: CMake project
@@ -81,3 +82,8 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
 
   add_dependencies(sdk-overlay CoreFoundationOverlay)
 endif()
+message(STATUS "Building overlays: ${overlays_to_build}")
+foreach(overlay ${overlays_to_build})
+  message(STATUS "INCLUDING OVERLAY: ${overlay}")
+  add_subdirectory(${overlay})
+endforeach()
