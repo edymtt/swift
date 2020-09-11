@@ -54,7 +54,7 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
       INSTALL_COMMAND ditto <TMP_DIR>/Release <INSTALL_DIR>
       BUILD_BYPRODUCTS <INSTALL_DIR>/CoreFoundation.swiftmodule
       <INSTALL_DIR>/libswiftCoreFoundation.dylib
-                          )
+      EXCLUDE_FROM_ALL TRUE)
 
     # Experiment to see if we can avoid touching existing overlays
     add_custom_target(swiftCoreFoundation-swiftmodule-macosx-x86_64)
@@ -67,6 +67,7 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
     add_dependencies(swiftCoreFoundation-swiftmodule-macosx-arm64 CoreFoundationOverlay)
     add_dependencies(swiftCoreFoundation-macosx-arm64 CoreFoundationOverlay)
     add_dependencies(swiftCoreFoundation-macosx-x86_64 CoreFoundationOverlay)
+    add_dependencies(swift-stdlib-macosx-x86_64 CoreFoundationOverlay)
   else()
 
   # First idea: CMake project
