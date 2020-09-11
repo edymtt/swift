@@ -16,7 +16,6 @@ endif()
 set(all_overlays
   CoreGraphics
   Dispatch
-  Foundation
   ObjectiveC
   XCTest
 )
@@ -24,6 +23,7 @@ set(all_overlays
 if(NOT SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
   list(APPEND all_overlays
     CoreFoundation
+    Foundation
   )
 endif()
 
@@ -68,6 +68,33 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
     add_dependencies(swiftCoreFoundation-macosx-arm64 CoreFoundationOverlay)
     add_dependencies(swiftCoreFoundation-macosx-x86_64 CoreFoundationOverlay)
     add_dependencies(swift-stdlib-macosx-x86_64 CoreFoundationOverlay)
+
+    ExternalProject_Add(FoundationOverlay
+      SOURCE_DIR "${CMAKE_SOURCE_DIR}/../foundation-swiftoverlay"
+      INSTALL_DIR  ${SWIFTLIB_DIR}/macosx   # ${CMAKE_CURRENT_BINARY_DIR}/CoreFoundation
+      CONFIGURE_COMMAND ""
+      BUILD_COMMAND xcodebuild -target Foundation-swiftoverlay -sdk macosx SYMROOT=<TMP_DIR> OBJROOT=<TMP_DIR> 
+      SWIFT_EXEC=${SWIFT_NATIVE_SWIFT_TOOLS_PATH}/swiftc
+      IS_ZIPPERED=$<IF:$<BOOL:${SWIFT_ENABLE_MACCATALYST}>,YES,NO>
+      BUILD_IN_SOURCE TRUE
+      INSTALL_COMMAND ditto <TMP_DIR>/Release <INSTALL_DIR>
+      BUILD_BYPRODUCTS <INSTALL_DIR>/Foundation.swiftmodule
+      <INSTALL_DIR>/libswiftFoundation.dylib
+      EXCLUDE_FROM_ALL TRUE
+      DEPENDS CoreFoundationOverlay)
+
+    # Experiment to see if we can avoid touching existing overlays
+    add_custom_target(swiftFoundation-swiftmodule-macosx-x86_64)
+    add_custom_target(swiftFoundation-swiftmodule-macosx-arm64)
+    add_library(swiftFoundation-macosx-arm64 SHARED IMPORTED GLOBAL )
+    add_library(swiftFoundation-macosx-x86_64 SHARED IMPORTED GLOBAL )
+    set_property(TARGET swiftFoundation-macosx-arm64 PROPERTY IMPORTED_LOCATION ${SWIFTLIB_DIR}/macosx/libswiftFoundation.dylib)
+    set_property(TARGET swiftFoundation-macosx-x86_64 PROPERTY IMPORTED_LOCATION ${SWIFTLIB_DIR}/macosx/libswiftFoundation.dylib)
+    add_dependencies(swiftFoundation-swiftmodule-macosx-x86_64 FoundationOverlay)
+    add_dependencies(swiftFoundation-swiftmodule-macosx-arm64 FoundationOverlay)
+    add_dependencies(swiftFoundation-macosx-arm64 FoundationOverlay)
+    add_dependencies(swiftFoundation-macosx-x86_64 FoundationOverlay)
+    add_dependencies(swift-stdlib-macosx-x86_64 FoundationOverlay)
   else()
 
   # First idea: CMake project
