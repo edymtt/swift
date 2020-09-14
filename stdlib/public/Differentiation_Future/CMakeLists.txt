@@ -1,6 +1,8 @@
 set(SOURCES_FOLDER ../Differentiation)
 
 add_swift_target_library(swift_Differentiation ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES} IS_STDLIB
+  ${SOURCES_FOLDER}/Differentiable.swift
+  ${SOURCES_FOLDER}/DifferentialOperators.swift
   ${SOURCES_FOLDER}/DifferentiationUtilities.swift
   ${SOURCES_FOLDER}/AnyDifferentiable.swift
   ${SOURCES_FOLDER}/ArrayDifferentiation.swift
