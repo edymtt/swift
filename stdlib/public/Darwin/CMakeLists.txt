@@ -96,18 +96,7 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
       DEPENDS CoreFoundationOverlay swiftCore-macosx)
 
     # Experiment to see if we can avoid touching existing overlays
-    add_custom_target(swiftFoundation-swiftmodule-macosx-x86_64)
-    add_custom_target(swiftFoundation-swiftmodule-macosx-arm64)
-    add_library(swiftFoundation-macosx-arm64 SHARED IMPORTED GLOBAL )
-    add_library(swiftFoundation-macosx-x86_64 SHARED IMPORTED GLOBAL )
-    set_property(TARGET swiftFoundation-macosx-arm64 PROPERTY IMPORTED_LOCATION ${SWIFTLIB_DIR}/macosx/libswiftFoundation.dylib)
-    set_property(TARGET swiftFoundation-macosx-x86_64 PROPERTY IMPORTED_LOCATION ${SWIFTLIB_DIR}/macosx/libswiftFoundation.dylib)
-    add_dependencies(swiftFoundation-swiftmodule-macosx-x86_64 FoundationOverlay)
-    add_dependencies(swiftFoundation-swiftmodule-macosx-arm64 FoundationOverlay)
-    add_dependencies(swiftFoundation-macosx-arm64 FoundationOverlay)
-    add_dependencies(swiftFoundation-macosx-x86_64 FoundationOverlay)
-    add_dependencies(swift-stdlib-macosx-x86_64 FoundationOverlay)
-    add_dependencies(swift-stdlib-macosx-arm64 FoundationOverlay)
+    addOverlayTargets(Foundation)
   else()
 
   # First idea: CMake project
