@@ -33,7 +33,21 @@ else()
   set(overlays_to_build ${all_overlays})
 endif()
 
-function(addXcodeProject)
+function(addOverlayXcodeProject overlay)
+    ExternalProject_Add(${overlay}Overlay
+      SOURCE_DIR "${CMAKE_SOURCE_DIR}/../foundation-swiftoverlay"
+      INSTALL_DIR  ${SWIFTLIB_DIR}/macosx   # ${CMAKE_CURRENT_BINARY_DIR}/${overlay}
+      CONFIGURE_COMMAND ""
+      BUILD_COMMAND xcodebuild -target ${overlay}-swiftoverlay -sdk macosx SYMROOT=<TMP_DIR> OBJROOT=<TMP_DIR> 
+      SWIFT_EXEC=${SWIFT_NATIVE_SWIFT_TOOLS_PATH}/swiftc
+      IS_ZIPPERED=NO #IS_ZIPPERED=$<IF:$<BOOL:${SWIFT_ENABLE_MACCATALYST}>,YES,NO>
+      MACOSX_DEPLOYMENT_TARGET=${DARWIN_DEPLOYMENT_VERSION_OSX} IPHONEOS_DEPLOYMENT_TARGET=${DARWIN_DEPLOYMENT_VERSION_IOS}
+      BUILD_IN_SOURCE TRUE
+      INSTALL_COMMAND ditto <TMP_DIR>/Release <INSTALL_DIR>
+      BUILD_BYPRODUCTS <INSTALL_DIR>/${overlay}.swiftmodule
+      <INSTALL_DIR>/libswift${overlay}.dylib
+      EXCLUDE_FROM_ALL TRUE
+      DEPENDS swiftCore-macosx)
 endfunction()
 
 function(addOverlayTargets overlay)
@@ -62,20 +76,7 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
   if(${build_type} STREQUAL "xcode")
     # Second idea: Xcode project
     # FIXME: set correct oputput folder
-    ExternalProject_Add(CoreFoundationOverlay
-      SOURCE_DIR "${CMAKE_SOURCE_DIR}/../foundation-swiftoverlay"
-      INSTALL_DIR  ${SWIFTLIB_DIR}/macosx   # ${CMAKE_CURRENT_BINARY_DIR}/CoreFoundation
-      CONFIGURE_COMMAND ""
-      BUILD_COMMAND xcodebuild -target CoreFoundation-swiftoverlay -sdk macosx SYMROOT=<TMP_DIR> OBJROOT=<TMP_DIR> 
-      SWIFT_EXEC=${SWIFT_NATIVE_SWIFT_TOOLS_PATH}/swiftc
-      IS_ZIPPERED=NO #IS_ZIPPERED=$<IF:$<BOOL:${SWIFT_ENABLE_MACCATALYST}>,YES,NO>
-      MACOSX_DEPLOYMENT_TARGET=${DARWIN_DEPLOYMENT_VERSION_OSX} IPHONEOS_DEPLOYMENT_TARGET=${DARWIN_DEPLOYMENT_VERSION_IOS}
-      BUILD_IN_SOURCE TRUE
-      INSTALL_COMMAND ditto <TMP_DIR>/Release <INSTALL_DIR>
-      BUILD_BYPRODUCTS <INSTALL_DIR>/CoreFoundation.swiftmodule
-      <INSTALL_DIR>/libswiftCoreFoundation.dylib
-      EXCLUDE_FROM_ALL TRUE
-      DEPENDS swiftCore-macosx)
+    addOverlayXcodeProject(CoreFoundation)
 
     # Experiment to see if we can avoid touching existing overlays
     addOverlayTargets(CoreFoundation)
