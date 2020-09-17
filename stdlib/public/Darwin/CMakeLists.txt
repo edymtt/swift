@@ -34,6 +34,13 @@ else()
 endif()
 
 function(addOverlayXcodeProject overlay)
+    set(options)
+    set(oneValueArgs)
+    set(multiValueArgs DEPENDS)
+
+    cmake_parse_arguments(AOXP "${options}" "${oneValueArgs}"
+                                  "${multiValueArgs}" ${ARGN} )
+
     ExternalProject_Add(${overlay}Overlay
       SOURCE_DIR "${CMAKE_SOURCE_DIR}/../foundation-swiftoverlay"
       INSTALL_DIR  ${SWIFTLIB_DIR}/macosx   # ${CMAKE_CURRENT_BINARY_DIR}/${overlay}
@@ -47,7 +54,7 @@ function(addOverlayXcodeProject overlay)
       BUILD_BYPRODUCTS <INSTALL_DIR>/${overlay}.swiftmodule
       <INSTALL_DIR>/libswift${overlay}.dylib
       EXCLUDE_FROM_ALL TRUE
-      DEPENDS swiftCore-macosx)
+      DEPENDS swiftCore-macosx ${AOXP_DEPENDS})
 endfunction()
 
 function(addOverlayTargets overlay)
@@ -81,22 +88,8 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
     # Experiment to see if we can avoid touching existing overlays
     addOverlayTargets(CoreFoundation)
 
-    ExternalProject_Add(FoundationOverlay
-      SOURCE_DIR "${CMAKE_SOURCE_DIR}/../foundation-swiftoverlay"
-      INSTALL_DIR  ${SWIFTLIB_DIR}/macosx   # ${CMAKE_CURRENT_BINARY_DIR}/CoreFoundation
-      CONFIGURE_COMMAND ""
-      BUILD_COMMAND xcodebuild -target Foundation-swiftoverlay -sdk macosx SYMROOT=<TMP_DIR> OBJROOT=<TMP_DIR> 
-      SWIFT_EXEC=${SWIFT_NATIVE_SWIFT_TOOLS_PATH}/swiftc
-      IS_ZIPPERED=NO #$<IF:$<BOOL:${SWIFT_ENABLE_MACCATALYST}>,YES,NO>
-      MACOSX_DEPLOYMENT_TARGET=${DARWIN_DEPLOYMENT_VERSION_OSX} IPHONEOS_DEPLOYMENT_TARGET=${DARWIN_DEPLOYMENT_VERSION_IOS}
-      BUILD_IN_SOURCE TRUE
-      INSTALL_COMMAND ditto <TMP_DIR>/Release <INSTALL_DIR>
-      BUILD_BYPRODUCTS <INSTALL_DIR>/Foundation.swiftmodule
-      <INSTALL_DIR>/libswiftFoundation.dylib
-      EXCLUDE_FROM_ALL TRUE
-      DEPENDS CoreFoundationOverlay swiftCore-macosx)
-
     # Experiment to see if we can avoid touching existing overlays
+    addOverlayXcodeProject(Foundation DEPENDS CoreFoundationOverlay)
     addOverlayTargets(Foundation)
   else()
 
