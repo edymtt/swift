@@ -33,6 +33,24 @@ else()
   set(overlays_to_build ${all_overlays})
 endif()
 
+function(addXcodeProject)
+endfunction()
+
+function(addOverlayTargets overlay)
+    add_custom_target(swift${overlay}-swiftmodule-macosx-x86_64)
+    add_custom_target(swift${overlay}-swiftmodule-macosx-arm64)
+    add_library(swift${overlay}-macosx-arm64 SHARED IMPORTED )
+    add_library(swift${overlay}-macosx-x86_64 SHARED IMPORTED )
+    set_property(TARGET swift${overlay}-macosx-arm64 PROPERTY IMPORTED_LOCATION ${SWIFTLIB_DIR}/macosx/libswift${overlay}.dylib)
+    set_property(TARGET swift${overlay}-macosx-x86_64 PROPERTY IMPORTED_LOCATION ${SWIFTLIB_DIR}/macosx/libswift${overlay}.dylib)
+    add_dependencies(swift${overlay}-swiftmodule-macosx-x86_64 ${overlay}Overlay)
+    add_dependencies(swift${overlay}-swiftmodule-macosx-arm64 ${overlay}Overlay)
+    add_dependencies(swift${overlay}-macosx-arm64 ${overlay}Overlay)
+    add_dependencies(swift${overlay}-macosx-x86_64 ${overlay}Overlay)
+    add_dependencies(swift-stdlib-macosx-x86_64 ${overlay}Overlay)
+    add_dependencies(swift-stdlib-macosx-arm64 ${overlay}Overlay)
+endfunction()
+
 message(STATUS "Experimental build for foundation overlay: ${SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD}")
 if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
   #add CoreFoundation in a different way
@@ -60,18 +78,7 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
       DEPENDS swiftCore-macosx)
 
     # Experiment to see if we can avoid touching existing overlays
-    add_custom_target(swiftCoreFoundation-swiftmodule-macosx-x86_64)
-    add_custom_target(swiftCoreFoundation-swiftmodule-macosx-arm64)
-    add_library(swiftCoreFoundation-macosx-arm64 SHARED IMPORTED )
-    add_library(swiftCoreFoundation-macosx-x86_64 SHARED IMPORTED )
-    set_property(TARGET swiftCoreFoundation-macosx-arm64 PROPERTY IMPORTED_LOCATION ${SWIFTLIB_DIR}/macosx/libswiftCoreFoundation.dylib)
-    set_property(TARGET swiftCoreFoundation-macosx-x86_64 PROPERTY IMPORTED_LOCATION ${SWIFTLIB_DIR}/macosx/libswiftCoreFoundation.dylib)
-    add_dependencies(swiftCoreFoundation-swiftmodule-macosx-x86_64 CoreFoundationOverlay)
-    add_dependencies(swiftCoreFoundation-swiftmodule-macosx-arm64 CoreFoundationOverlay)
-    add_dependencies(swiftCoreFoundation-macosx-arm64 CoreFoundationOverlay)
-    add_dependencies(swiftCoreFoundation-macosx-x86_64 CoreFoundationOverlay)
-    add_dependencies(swift-stdlib-macosx-x86_64 CoreFoundationOverlay)
-    add_dependencies(swift-stdlib-macosx-arm64 CoreFoundationOverlay)
+    addOverlayTargets(CoreFoundation)
 
     ExternalProject_Add(FoundationOverlay
       SOURCE_DIR "${CMAKE_SOURCE_DIR}/../foundation-swiftoverlay"
