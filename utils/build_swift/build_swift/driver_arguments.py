@@ -387,6 +387,9 @@ def create_argument_parser():
     option('--distcc', toggle_true,
            default=os.environ.get('USE_DISTCC') == '1',
            help='use distcc in pump mode')
+    option('--sccache', toggle_true,
+           default=os.environ.get('SWIFT_USE_SCCACHE') == '1',
+           help='use sccache')
     option('--enable-asan', toggle_true,
            help='enable Address Sanitizer')
     option('--enable-ubsan', toggle_true,
@@ -597,7 +600,7 @@ def create_argument_parser():
     option('--swiftsyntax-verify-generated-files',
            toggle_true('swiftsyntax_verify_generated_files'),
            help='set to verify that the generated files in the source tree '
-                'match the ones that would be generated from current master')
+                'match the ones that would be generated from current main')
     option(['--install-sourcekit-lsp'], toggle_true('install_sourcekitlsp'),
            help='install SourceKitLSP')
     option(['--install-skstresstester'], toggle_true('install_skstresstester'),
@@ -1190,16 +1193,13 @@ SWIFT_SOURCE_ROOT: a directory containing the source for LLVM, Clang, Swift.
 
 'build-script' expects the sources to be laid out in the following way:
 
-   $SWIFT_SOURCE_ROOT/llvm
-                     /clang
+   $SWIFT_SOURCE_ROOT/llvm-project
                      /swift
-                     /lldb                       (optional)
                      /llbuild                    (optional)
                      /swiftpm                    (optional, requires llbuild)
                      /swift-syntax               (optional, requires swiftpm)
                      /swift-stress-tester        (optional,
                                                    requires swift-syntax)
-                     /compiler-rt                (optional)
                      /swift-corelibs-xctest      (optional)
                      /swift-corelibs-foundation  (optional)
                      /swift-corelibs-libdispatch (optional)

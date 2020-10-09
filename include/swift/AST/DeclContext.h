@@ -508,14 +508,6 @@ public:
   /// FIXME: do this for Protocols, too someday
   bool canBeParentOfExtension() const;
 
-  /// Returns true if lookups within this context could affect downstream files.
-  ///
-  /// \param functionsAreNonCascading If true, functions are considered non-
-  /// cascading contexts. If false, functions are considered non-cascading only
-  /// if implicitly or explicitly marked private. When concerned only with a
-  /// function's body, pass true.
-  bool isCascadingContextForLookup(bool functionsAreNonCascading) const;
-
   /// Look for the set of declarations with the given name within a type,
   /// its extensions and, optionally, its supertypes.
   ///
@@ -720,13 +712,6 @@ class IterableDeclContext {
   /// member loading, as a key when doing lookup in this IDC.
   serialization::DeclID SerialID;
 
-  /// Because \c parseDelayedDecl and lazy member adding can add members *after*
-  /// an \c ASTScope tree is created, there must be some way for the tree to
-  /// detect when a member has been added. A bit would suffice,
-  /// but would be more fragile, The scope code could count the members each
-  /// time, but I think it's a better trade to just keep a count here.
-  unsigned MemberCount : 29;
-
   /// Whether we have already added the parsed members into the context.
   unsigned AddedParsedMembers : 1;
 
@@ -749,7 +734,6 @@ class IterableDeclContext {
 public:
   IterableDeclContext(IterableDeclContextKind kind)
     : LastDeclAndKind(nullptr, kind) {
-    MemberCount = 0;
     AddedParsedMembers = 0;
     HasOperatorDeclarations = 0;
     HasNestedClassDeclarations = 0;
@@ -798,12 +782,20 @@ public:
   /// abstractions on top of member loading, such as a name lookup table.
   DeclRange getCurrentMembersWithoutLoading() const;
 
-  /// Add a member to this context. If the hint decl is specified, the new decl
-  /// is inserted immediately after the hint.
-  void addMember(Decl *member, Decl *hint = nullptr);
+  /// Add a member to this context.
+  ///
+  /// If the hint decl is specified, the new decl is inserted immediately
+  /// after the hint.
+  ///
+  /// If insertAtHead is set, the new decl is inserted at the beginning of
+  /// the list.
+  ///
+  /// Otherwise, it is inserted at the end.
+  void addMember(Decl *member, Decl *hint = nullptr, bool insertAtHead = false);
 
-  /// See \c MemberCount
-  unsigned getMemberCount() const;
+  /// Add a member in the right place to preserve source order. This should
+  /// only be called from the code completion delayed parsing path.
+  void addMemberPreservingSourceOrder(Decl *member);
 
   /// Check whether there are lazily-loaded members.
   bool hasLazyMembers() const {
@@ -881,10 +873,7 @@ public:
 private:
   /// Add a member to the list for iteration purposes, but do not notify the
   /// subclass that we have done so.
-  ///
-  /// This is used internally when loading members, because loading a
-  /// member is an invisible addition.
-  void addMemberSilently(Decl *member, Decl *hint = nullptr) const;
+  void addMemberSilently(Decl *member, Decl *hint, bool insertAtHead) const;
 };
 
 /// Define simple_display for DeclContexts but not for subclasses in order to

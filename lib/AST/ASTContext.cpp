@@ -191,10 +191,10 @@ struct ASTContext::Implementation {
   DECL_CLASS *NAME##Decl = nullptr;
 #include "swift/AST/KnownStdlibTypes.def"
 
-#define KNOWN_OBJC_TYPE_DECL(MODULE, NAME, DECL_CLASS) \
+#define KNOWN_SDK_TYPE_DECL(MODULE, NAME, DECL_CLASS, NUM_GENERIC_PARAMS) \
   /** The declaration of MODULE.NAME. */ \
   DECL_CLASS *NAME##Decl = nullptr;
-#include "swift/AST/KnownObjCTypes.def"
+#include "swift/AST/KnownSDKTypes.def"
 
   /// The declaration of '+' function for two RangeReplaceableCollection.
   FuncDecl *PlusFunctionOnRangeReplaceableCollection = nullptr;
@@ -255,6 +255,9 @@ struct ASTContext::Implementation {
   /// The set of known protocols, lazily populated as needed.
   ProtocolDecl *KnownProtocols[NumKnownProtocols] = { };
 
+  /// The module interface checker owned by the ASTContext.
+  std::unique_ptr<ModuleInterfaceChecker> InterfaceChecker;
+
   /// The various module loaders that import external modules into this
   /// ASTContext.
   SmallVector<std::unique_ptr<swift::ModuleLoader>, 4> ModuleLoaders;
@@ -267,9 +270,6 @@ struct ASTContext::Implementation {
 
   /// The module loader used to load Clang modules from DWARF.
   ClangModuleLoader *TheDWARFModuleLoader = nullptr;
-
-  /// The module loader used to load Swift textual interface.
-  ModuleLoader *TheModuleInterfaceLoader = nullptr;
 
   /// Map from Swift declarations to raw comments.
   llvm::DenseMap<const Decl *, RawComment> RawComments;
@@ -298,7 +298,8 @@ struct ASTContext::Implementation {
   /// Map from normal protocol conformances to missing witnesses that have
   /// been delayed until the conformance is fully checked, so that we can
   /// issue a fixit that fills the entire protocol stub.
-  llvm::DenseMap<NormalProtocolConformance *, std::vector<ValueDecl*>>
+  llvm::DenseMap<
+      NormalProtocolConformance *, std::unique_ptr<MissingWitnessesBase>>
     DelayedMissingWitnesses;
 
   /// Stores information about lazy deserialization of various declarations.
@@ -648,6 +649,18 @@ llvm::BumpPtrAllocator &ASTContext::getAllocator(AllocationArena arena) const {
   llvm_unreachable("bad AllocationArena");
 }
 
+ImportPath::Raw
+swift::detail::ImportPathBuilder_copyToImpl(ASTContext &ctx,
+                                            ImportPath::Raw raw) {
+  return ctx.AllocateCopy(raw);
+}
+
+Identifier
+swift::detail::ImportPathBuilder_getIdentifierImpl(ASTContext &ctx,
+                                                   StringRef string) {
+  return ctx.getIdentifier(string);
+}
+
 /// Set a new stats reporter.
 void ASTContext::setStatsReporter(UnifiedStatsReporter *stats) {
   if (stats) {
@@ -881,7 +894,7 @@ CanType ASTContext::getNeverType() const {
   return neverDecl->getDeclaredInterfaceType()->getCanonicalType();
 }
 
-#define KNOWN_OBJC_TYPE_DECL(MODULE, NAME, DECLTYPE) \
+#define KNOWN_SDK_TYPE_DECL(MODULE, NAME, DECLTYPE, GENERIC_ARGS) \
 DECLTYPE *ASTContext::get##NAME##Decl() const { \
   if (!getImpl().NAME##Decl) { \
     if (ModuleDecl *M = getLoadedModule(Id_##MODULE)) { \
@@ -892,7 +905,8 @@ DECLTYPE *ASTContext::get##NAME##Decl() const { \
                          decls); \
       if (decls.size() == 1 && isa<DECLTYPE>(decls[0])) { \
         auto decl = cast<DECLTYPE>(decls[0]); \
-        if (isa<ProtocolDecl>(decl) || decl->getGenericParams() == nullptr) { \
+        if (isa<ProtocolDecl>(decl) \
+            || (bool)decl->getGenericParams() == (bool)GENERIC_ARGS) { \
           getImpl().NAME##Decl = decl; \
         } \
       } \
@@ -909,7 +923,7 @@ Type ASTContext::get##NAME##Type() const { \
   return decl->getDeclaredInterfaceType(); \
 }
 
-#include "swift/AST/KnownObjCTypes.def"
+#include "swift/AST/KnownSDKTypes.def"
 
 ProtocolDecl *ASTContext::getProtocol(KnownProtocolKind kind) const {
   // Check whether we've already looked for and cached this protocol.
@@ -933,6 +947,9 @@ ProtocolDecl *ASTContext::getProtocol(KnownProtocolKind kind) const {
     break;
   case KnownProtocolKind::Differentiable:
     M = getLoadedModule(Id_Differentiation);
+    break;
+  case KnownProtocolKind::Actor:
+    M = getLoadedModule(Id_Concurrency);
     break;
   default:
     M = getStdlibModule();
@@ -1506,9 +1523,13 @@ void ASTContext::addModuleLoader(std::unique_ptr<ModuleLoader> loader,
   if (IsClang && IsDwarf && !getImpl().TheDWARFModuleLoader)
     getImpl().TheDWARFModuleLoader =
         static_cast<ClangModuleLoader *>(loader.get());
-  if (IsInterface && !getImpl().TheModuleInterfaceLoader)
-    getImpl().TheModuleInterfaceLoader = loader.get();
   getImpl().ModuleLoaders.push_back(std::move(loader));
+}
+
+void ASTContext::addModuleInterfaceChecker(
+    std::unique_ptr<ModuleInterfaceChecker> checker) {
+  assert(!getImpl().InterfaceChecker && "Checker has been set already");
+  getImpl().InterfaceChecker = std::move(checker);
 }
 
 Optional<ModuleDependencies> ASTContext::getModuleDependencies(
@@ -1597,12 +1618,14 @@ ClangModuleLoader *ASTContext::getDWARFModuleLoader() const {
   return getImpl().TheDWARFModuleLoader;
 }
 
-ModuleLoader *ASTContext::getModuleInterfaceLoader() const {
-  return getImpl().TheModuleInterfaceLoader;
+ModuleInterfaceChecker *ASTContext::getModuleInterfaceChecker() const {
+  auto *result = getImpl().InterfaceChecker.get();
+  assert(result);
+  return result;
 }
 
 ModuleDecl *ASTContext::getLoadedModule(
-    ArrayRef<Located<Identifier>> ModulePath) const {
+    ImportPath::Module ModulePath) const {
   assert(!ModulePath.empty());
 
   // TODO: Swift submodules.
@@ -1867,28 +1890,28 @@ bool ASTContext::shouldPerformTypoCorrection() {
   return NumTypoCorrections <= LangOpts.TypoCorrectionLimit;
 }
 
-bool ASTContext::canImportModule(Located<Identifier> ModulePath) {
+bool ASTContext::canImportModule(ImportPath::Element ModuleName) {
   // If this module has already been successfully imported, it is importable.
-  if (getLoadedModule(ModulePath) != nullptr)
+  if (getLoadedModule(ImportPath::Module::Builder(ModuleName).get()) != nullptr)
     return true;
 
   // If we've failed loading this module before, don't look for it again.
-  if (FailedModuleImportNames.count(ModulePath.Item))
+  if (FailedModuleImportNames.count(ModuleName.Item))
     return false;
 
   // Otherwise, ask the module loaders.
   for (auto &importer : getImpl().ModuleLoaders) {
-    if (importer->canImportModule(ModulePath)) {
+    if (importer->canImportModule(ModuleName)) {
       return true;
     }
   }
 
-  FailedModuleImportNames.insert(ModulePath.Item);
+  FailedModuleImportNames.insert(ModuleName.Item);
   return false;
 }
 
 ModuleDecl *
-ASTContext::getModule(ArrayRef<Located<Identifier>> ModulePath) {
+ASTContext::getModule(ImportPath::Module ModulePath) {
   assert(!ModulePath.empty());
 
   if (auto *M = getLoadedModule(ModulePath))
@@ -1905,14 +1928,13 @@ ASTContext::getModule(ArrayRef<Located<Identifier>> ModulePath) {
 }
 
 ModuleDecl *ASTContext::getModuleByName(StringRef ModuleName) {
-  SmallVector<Located<Identifier>, 4>
-  AccessPath;
-  while (!ModuleName.empty()) {
-    StringRef SubModuleName;
-    std::tie(SubModuleName, ModuleName) = ModuleName.split('.');
-    AccessPath.push_back({ getIdentifier(SubModuleName), SourceLoc() });
-  }
-  return getModule(AccessPath);
+  ImportPath::Module::Builder builder(*this, ModuleName, /*separator=*/'.');
+  return getModule(builder.get());
+}
+
+ModuleDecl *ASTContext::getModuleByIdentifier(Identifier ModuleID) {
+  ImportPath::Module::Builder builder(ModuleID);
+  return getModule(builder.get());
 }
 
 ModuleDecl *ASTContext::getStdlibModule(bool loadIfAbsent) {
@@ -1921,8 +1943,7 @@ ModuleDecl *ASTContext::getStdlibModule(bool loadIfAbsent) {
 
   if (loadIfAbsent) {
     auto mutableThis = const_cast<ASTContext*>(this);
-    TheStdlibModule =
-      mutableThis->getModule({ Located<Identifier>(StdlibModuleName, SourceLoc()) });
+    TheStdlibModule = mutableThis->getModuleByIdentifier(StdlibModuleName);
   } else {
     TheStdlibModule = getLoadedModule(StdlibModuleName);
   }
@@ -2129,22 +2150,24 @@ bool ASTContext::hasDelayedConformanceErrors() const {
   return false;
 }
 
+MissingWitnessesBase::~MissingWitnessesBase() { }
+
 void ASTContext::addDelayedConformanceDiag(
        NormalProtocolConformance *conformance,
        DelayedConformanceDiag fn) {
   getImpl().DelayedConformanceDiags[conformance].push_back(std::move(fn));
 }
 
-void ASTContext::
-addDelayedMissingWitnesses(NormalProtocolConformance *conformance,
-                           ArrayRef<ValueDecl*> witnesses) {
-  auto &bucket = getImpl().DelayedMissingWitnesses[conformance];
-  bucket.insert(bucket.end(), witnesses.begin(), witnesses.end());
+void ASTContext::addDelayedMissingWitnesses(
+    NormalProtocolConformance *conformance,
+    std::unique_ptr<MissingWitnessesBase> missingWitnesses) {
+  getImpl().DelayedMissingWitnesses[conformance] = std::move(missingWitnesses);
 }
 
-std::vector<ValueDecl*> ASTContext::
-takeDelayedMissingWitnesses(NormalProtocolConformance *conformance) {
-  std::vector<ValueDecl*> result;
+std::unique_ptr<MissingWitnessesBase>
+ASTContext::takeDelayedMissingWitnesses(
+    NormalProtocolConformance *conformance) {
+  std::unique_ptr<MissingWitnessesBase> result;
   auto known = getImpl().DelayedMissingWitnesses.find(conformance);
   if (known != getImpl().DelayedMissingWitnesses.end()) {
     result = std::move(known->second);
@@ -2387,13 +2410,9 @@ Type ErrorType::get(Type originalType) {
   return entry = new (mem) ErrorType(ctx, originalType, properties);
 }
 
-Type HoleType::get(ASTContext &ctx, OriginatorType originator) {
+Type HoleType::get(ASTContext &ctx, Originator originator) {
   assert(originator);
-  auto properties = reinterpret_cast<TypeBase *>(originator.getOpaqueValue())
-                        ->getRecursiveProperties();
-  properties |= RecursiveTypeProperties::HasTypeHole;
-
-  auto arena = getArena(properties);
+  auto arena = getArena(RecursiveTypeProperties::HasTypeHole);
   return new (ctx, arena)
       HoleType(ctx, originator, RecursiveTypeProperties::HasTypeHole);
 }
@@ -3246,6 +3265,9 @@ GenericFunctionType *GenericFunctionType::get(GenericSignature sig,
   // point.
   bool isCanonical = isGenericFunctionTypeCanonical(sig, params, result);
 
+  assert(info.getClangTypeInfo().empty() &&
+         "Generic functions do not have Clang types at the moment.");
+
   if (auto funcTy
         = ctx.getImpl().GenericFunctionTypes.FindNodeOrInsertPos(id, insertPos)) {
     return funcTy;
@@ -3365,6 +3387,7 @@ SILFunctionType::SILFunctionType(
          "Bits were dropped!");
   static_assert(SILExtInfoBuilder::NumMaskBits == NumSILExtInfoBits,
                 "ExtInfo and SILFunctionTypeBitfields must agree on bit size");
+  Bits.SILFunctionType.HasClangTypeInfo = !ext.getClangTypeInfo().empty();
   Bits.SILFunctionType.CoroutineKind = unsigned(coroutineKind);
   NumParameters = params.size();
   if (coroutineKind == SILCoroutineKind::None) {
@@ -3402,6 +3425,9 @@ SILFunctionType::SILFunctionType(
     getMutableFormalResultsCache() = CanType();
     getMutableAllResultsCache() = CanType();
   }
+  if (!ext.getClangTypeInfo().empty())
+    *getTrailingObjects<ClangTypeInfo>() = ext.getClangTypeInfo();
+
 #ifndef NDEBUG
   if (ext.getRepresentation() == Representation::WitnessMethod)
     assert(!WitnessMethodConformance.isInvalid() &&
@@ -3524,6 +3550,21 @@ CanSILFunctionType SILFunctionType::get(
   
   patternSubs = patternSubs.getCanonical();
   invocationSubs = invocationSubs.getCanonical();
+
+  // [FIXME: Clang-type-plumbing]
+  if (ctx.LangOpts.UseClangFunctionTypes) {
+    if (auto error = ext.checkClangType()) {
+      error.getValue().dump();
+      llvm_unreachable("Unexpected Clang type in SILExtInfo.");
+    }
+  } else if (!ext.getClangTypeInfo().empty()) {
+    // Unlike AnyFunctionType, SILFunctionType is always canonical. Hence,
+    // conditionalizing canonical type computation based on
+    // UseClangFunctionTypes like AnyFunctionType is not feasible. It is simpler
+    // to drop the Clang type altogether.
+    ext = ext.intoBuilder().withClangFunctionType(nullptr).build();
+  }
+
   
   llvm::FoldingSetNodeID id;
   SILFunctionType::Profile(id, genericSig, ext, coroutineKind, callee, params,
@@ -3541,12 +3582,11 @@ CanSILFunctionType SILFunctionType::get(
 
   // See [NOTE: SILFunctionType-layout]
   bool hasResultCache = normalResults.size() > 1;
-  size_t bytes =
-    totalSizeToAlloc<SILParameterInfo, SILResultInfo, SILYieldInfo,
-                     SubstitutionMap, CanType>(
+  size_t bytes = totalSizeToAlloc<SILParameterInfo, SILResultInfo, SILYieldInfo,
+                                  SubstitutionMap, CanType, ClangTypeInfo>(
       params.size(), normalResults.size() + (errorResult ? 1 : 0),
       yields.size(), (patternSubs ? 1 : 0) + (invocationSubs ? 1 : 0),
-      hasResultCache ? 2 : 0);
+      hasResultCache ? 2 : 0, ext.getClangTypeInfo().empty() ? 0 : 1);
 
   void *mem = ctx.Allocate(bytes, alignof(SILFunctionType));
 
@@ -3924,8 +3964,7 @@ GenericEnvironment *OpenedArchetypeType::getGenericEnvironment() const {
   auto thisType = Type(const_cast<OpenedArchetypeType*>(this));
   auto &ctx = thisType->getASTContext();
   // Create a generic environment to represent the opened type.
-  auto signature =
-      ctx.getOpenedArchetypeSignature(Opened->getCanonicalType(), nullptr);
+  auto signature = ctx.getOpenedArchetypeSignature(Opened);
   auto *builder = signature->getGenericSignatureBuilder();
   auto *env = GenericEnvironment::getIncomplete(signature, builder);
   env->addMapping(signature->getGenericParams()[0], thisType);
@@ -4554,13 +4593,20 @@ CanGenericSignature ASTContext::getSingleGenericParameterSignature() const {
 // Type::getExistentialLayout()). In particular, the opened archetype signature
 // does not have requirements for conformances inherited from superclass
 // constraints while existential values do.
-CanGenericSignature ASTContext::getOpenedArchetypeSignature(CanType existential,
-                                                            ModuleDecl *mod) {
+CanGenericSignature ASTContext::getOpenedArchetypeSignature(Type type) {
+  assert(type->isExistentialType());
+
+  const CanType existential = type->getCanonicalType();
+
+  // The opened archetype signature for a protocol type is identical
+  // to the protocol's own canonical generic signature.
+  if (const auto protoTy = dyn_cast<ProtocolType>(existential)) {
+    return protoTy->getDecl()->getGenericSignature()->getCanonicalSignature();
+  }
+
   auto found = getImpl().ExistentialSignatures.find(existential);
   if (found != getImpl().ExistentialSignatures.end())
     return found->second;
-
-  assert(existential.isExistentialType());
 
   auto genericParam = GenericTypeParamType::get(0, 0, *this);
   Requirement requirement(RequirementKind::Conformance, genericParam,

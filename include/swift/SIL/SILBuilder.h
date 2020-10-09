@@ -1934,6 +1934,20 @@ public:
         getSILDebugLocation(Loc), Operand, Index));
   }
 
+  GetAsyncContinuationInst *createGetAsyncContinuation(SILLocation Loc,
+                                                       SILType ContinuationTy) {
+    return insert(new (getModule()) GetAsyncContinuationInst(getSILDebugLocation(Loc),
+                                                             ContinuationTy));
+  }
+
+  GetAsyncContinuationAddrInst *createGetAsyncContinuationAddr(SILLocation Loc,
+                                                               SILValue Operand,
+                                                               SILType ContinuationTy) {
+    return insert(new (getModule()) GetAsyncContinuationAddrInst(getSILDebugLocation(Loc),
+                                                                 Operand,
+                                                                 ContinuationTy));
+  }
+
   //===--------------------------------------------------------------------===//
   // Terminator SILInstruction Creation Methods
   //===--------------------------------------------------------------------===//
@@ -1964,7 +1978,17 @@ public:
         YieldInst::create(getSILDebugLocation(loc), yieldedValues,
                           resumeBB, unwindBB, getFunction()));
   }
-
+  
+  AwaitAsyncContinuationInst *createAwaitAsyncContinuation(SILLocation loc,
+                                                           SILValue continuation,
+                                                           SILBasicBlock *resumeBB,
+                                                           SILBasicBlock *errorBB) {
+    return insertTerminator(
+        new (getModule()) AwaitAsyncContinuationInst(getSILDebugLocation(loc),
+                                                     continuation,
+                                                     resumeBB, errorBB));
+  }
+  
   CondBranchInst *
   createCondBranch(SILLocation Loc, SILValue Cond, SILBasicBlock *Target1,
                    SILBasicBlock *Target2,
@@ -2358,15 +2382,11 @@ private:
   }
 
   void insertImpl(SILInstruction *TheInst) {
-    if (BB == 0)
-      return;
-
+    assert(hasValidInsertionPoint());
     BB->insert(InsertPt, TheInst);
 
     C.notifyInserted(TheInst);
 
-// TODO: We really shouldn't be creating instructions unless we are going to
-// insert them into a block... This failed in SimplifyCFG.
 #ifndef NDEBUG
     TheInst->verifyOperandOwnership();
 #endif

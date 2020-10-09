@@ -11,12 +11,22 @@ func testSlowServer(slowServer: SlowServer) async throws {
   let _: String = await try slowServer.findAnswerFailingly() ?? "nope"
   let _: Void = await slowServer.doSomethingFun("jump")
   let _: (Int) -> Void = slowServer.completionHandler
+
+  // async version
+  let _: Int = await slowServer.doSomethingConflicted("thinking")
+
+  // still async version...
+  let _: Int = slowServer.doSomethingConflicted("thinking")
+  // expected-error@-1{{call is 'async' but is not marked with 'await'}}
+}
+
+func testSlowServerSynchronous(slowServer: SlowServer) {
+  // synchronous version
+  let _: Int = slowServer.doSomethingConflicted("thinking")
 }
 
 func testSlowServerOldSchool(slowServer: SlowServer) {
-  var i1: Int = 0
   slowServer.doSomethingSlow("mail") { i in
-    i1 = i
+    _ = i
   }
-  print(i1)
 }

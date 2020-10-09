@@ -261,6 +261,20 @@ static ConstructorDecl *createImplicitConstructor(NominalTypeDecl *decl,
         }
       }
 
+      Type functionBuilderType= var->getFunctionBuilderType();
+      if (functionBuilderType) {
+        // If the variable's type is structurally a function type, use that
+        // type. Otherwise, form a non-escaping function type for the function
+        // parameter.
+        bool isStructuralFunctionType =
+            varInterfaceType->lookThroughAllOptionalTypes()
+              ->is<AnyFunctionType>();
+        if (!isStructuralFunctionType) {
+          auto extInfo = ASTExtInfoBuilder().withNoEscape().build();
+          varInterfaceType = FunctionType::get({ }, varInterfaceType, extInfo);
+        }
+      }
+
       // Create the parameter.
       auto *arg = new (ctx)
           ParamDecl(SourceLoc(), Loc,
@@ -272,6 +286,14 @@ static ConstructorDecl *createImplicitConstructor(NominalTypeDecl *decl,
 
       // Don't allow the parameter to accept temporary pointer conversions.
       arg->setNonEphemeralIfPossible();
+
+      // Attach a function builder attribute if needed.
+      if (functionBuilderType) {
+        auto typeExpr = TypeExpr::createImplicit(functionBuilderType, ctx);
+        auto attr = CustomAttr::create(
+            ctx, SourceLoc(), typeExpr, /*implicit=*/true);
+        arg->getAttrs().add(attr);
+      }
 
       maybeAddMemberwiseDefaultArg(arg, var, params.size(), ctx);
       
@@ -550,10 +572,11 @@ configureInheritedDesignatedInitAttributes(ClassDecl *classDecl,
 
   // If the superclass constructor is @objc but the subclass constructor is
   // not representable in Objective-C, add @nonobjc implicitly.
+  Optional<ForeignAsyncConvention> asyncConvention;
   Optional<ForeignErrorConvention> errorConvention;
   if (superclassCtor->isObjC() &&
       !isRepresentableInObjC(ctor, ObjCReason::MemberOfObjCSubclass,
-                             errorConvention))
+                             asyncConvention, errorConvention))
     ctor->getAttrs().add(new (ctx) NonObjCAttr(/*isImplicit=*/true));
 }
 
@@ -1053,12 +1076,11 @@ InheritsSuperclassInitializersRequest::evaluate(Evaluator &eval,
   if (decl->getAttrs().hasAttribute<InheritsConvenienceInitializersAttr>())
     return true;
 
-  auto superclass = decl->getSuperclass();
-  assert(superclass);
+  auto superclassDecl = decl->getSuperclassDecl();
+  assert(superclassDecl);
 
   // If the superclass has known-missing designated initializers, inheriting
   // is unsafe.
-  auto *superclassDecl = superclass->getClassOrBoundGenericClass();
   if (superclassDecl->getModuleContext() != decl->getParentModule() &&
       superclassDecl->hasMissingDesignatedInitializers())
     return false;
@@ -1334,7 +1356,7 @@ HasDefaultInitRequest::evaluate(Evaluator &evaluator,
   // Don't synthesize a default for a subclass, it will attempt to inherit its
   // initializers from its superclass.
   if (auto *cd = dyn_cast<ClassDecl>(decl))
-    if (cd->getSuperclass())
+    if (cd->getSuperclassDecl())
       return false;
 
   // If the user has already defined a designated initializer, then don't

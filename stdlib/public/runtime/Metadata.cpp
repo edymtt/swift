@@ -194,7 +194,7 @@ computeMetadataBoundsForSuperclass(const void *ref,
 #endif
   }
   }
-  swift_runtime_unreachable("unsupported superclass reference kind");
+  swift_unreachable("unsupported superclass reference kind");
 }
 
 static ClassMetadataBounds computeMetadataBoundsFromSuperclass(
@@ -733,6 +733,7 @@ MetadataResponse swift::swift_getCanonicalSpecializedMetadata(
       auto key = MetadataCacheKey(cache.NumKeyParameters, cache.NumWitnessTables,
                                   arguments);
       auto result = cache.getOrInsert(key, MetadataRequest(MetadataState::Complete, /*isNonBlocking*/true), canonicalMetadata);
+      (void)result;
       assert(result.second.Value == canonicalMetadata);
     }
   } else {
@@ -744,6 +745,7 @@ MetadataResponse swift::swift_getCanonicalSpecializedMetadata(
       auto key = MetadataCacheKey(cache.NumKeyParameters, cache.NumWitnessTables,
                                   arguments);
       auto result = cache.getOrInsert(key, MetadataRequest(MetadataState::Complete, /*isNonBlocking*/true), canonicalMetadata);
+      (void)result;
       assert(result.second.Value == canonicalMetadata);
     }
   }
@@ -3714,7 +3716,7 @@ getExistentialValueWitnesses(ProtocolClassConstraint classConstraint,
     return getOpaqueExistentialValueWitnesses(numWitnessTables);
   }
 
-  swift_runtime_unreachable("Unhandled ProtocolClassConstraint in switch.");
+  swift_unreachable("Unhandled ProtocolClassConstraint in switch.");
 }
 
 template<> ExistentialTypeRepresentation
@@ -3759,7 +3761,7 @@ ExistentialTypeMetadata::mayTakeValue(const OpaqueValue *container) const {
   }
   }
 
-  swift_runtime_unreachable(
+  swift_unreachable(
       "Unhandled ExistentialTypeRepresentation in switch.");
 }
 
@@ -3808,7 +3810,7 @@ ExistentialTypeMetadata::projectValue(const OpaqueValue *container) const {
   }
   }
 
-  swift_runtime_unreachable(
+  swift_unreachable(
       "Unhandled ExistentialTypeRepresentation in switch.");
 }
 
@@ -3833,7 +3835,7 @@ ExistentialTypeMetadata::getDynamicType(const OpaqueValue *container) const {
   }
   }
 
-  swift_runtime_unreachable(
+  swift_unreachable(
       "Unhandled ExistentialTypeRepresentation in switch.");
 }
 
@@ -4028,7 +4030,7 @@ class ForeignMetadataCacheEntry
     return Value;
   }
   void setValue(ValueType value) {
-    swift_runtime_unreachable("should never be called");
+    swift_unreachable("should never be called");
   }
 
 public:
@@ -4092,7 +4094,7 @@ public:
   }
 
   AllocationResult allocate(Metadata *candidate) {
-    swift_runtime_unreachable(
+    swift_unreachable(
                         "always flags allocation complete during construction");
   }
 
@@ -4553,7 +4555,7 @@ static void initProtocolWitness(void **slot, void *witness,
                                       reqt);
     return;
   }
-  swift_runtime_unreachable("bad witness kind");
+  swift_unreachable("bad witness kind");
 #else
   *slot = witness;
 #endif
@@ -4586,7 +4588,7 @@ static void copyProtocolWitness(void **dest, void * const *src,
     swift_ptrauth_copy(dest, src, reqt.Flags.getExtraDiscriminator());
     return;
   }
-  swift_runtime_unreachable("bad witness kind");
+  swift_unreachable("bad witness kind");
 #else
   *dest = *src;
 #endif
@@ -5139,7 +5141,7 @@ static const WitnessTable *swift_getAssociatedConformanceWitnessSlowImpl(
     return assocWitnessTable;
   }
 
-  swift_runtime_unreachable("Invalid mangled associate conformance");
+  swift_unreachable("Invalid mangled associate conformance");
 }
 
 const WitnessTable *swift::swift_getAssociatedConformanceWitness(
@@ -5232,7 +5234,7 @@ static Result performOnMetadataCache(const Metadata *metadata,
     case TypeContextDescriptorFlags::SingletonMetadataInitialization:
       return std::move(callbacks).forSingletonMetadata(description);
     }
-    swift_runtime_unreachable("bad metadata initialization kind");
+    swift_unreachable("bad metadata initialization kind");
   }
 
   auto &generics = description->getFullGenericContextHeader();
@@ -5278,7 +5280,7 @@ bool swift::addToMetadataQueue(MetadataCompletionQueueEntry *queueEntry,
     }
 
     bool forOtherMetadata(const Metadata *metadata) && {
-      swift_runtime_unreachable("metadata should always be complete");
+      swift_unreachable("metadata should always be complete");
     }
   } callbacks = { queueEntry, dependency };
 
@@ -5310,7 +5312,7 @@ void swift::resumeMetadataCompletion(MetadataCompletionQueueEntry *queueEntry) {
     }
 
     void forOtherMetadata(const Metadata *metadata) && {
-      swift_runtime_unreachable("metadata should always be complete");
+      swift_unreachable("metadata should always be complete");
     }
   } callbacks = { queueEntry };
 

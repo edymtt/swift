@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TypeChecker.h"
+#include "TypeCheckConcurrency.h"
 #include "swift/AST/ASTPrinter.h"
 #include "swift/AST/Decl.h"
 #include "swift/AST/Stmt.h"
@@ -72,6 +73,10 @@ bool DerivedConformance::derivesProtocolConformance(DeclContext *DC,
     // synthesize a full Hashable implementation for structs and enums with
     // Hashable components.
     return canDeriveHashable(Nominal);
+  }
+
+  if (*derivableKind == KnownDerivableProtocolKind::Actor) {
+    return canDeriveActor(Nominal, DC);
   }
 
   if (*derivableKind == KnownDerivableProtocolKind::AdditiveArithmetic)
@@ -359,6 +364,11 @@ ValueDecl *DerivedConformance::getDerivableRequirement(NominalTypeDecl *nominal,
         return getRequirement(KnownProtocolKind::Hashable);
     }
 
+    // Actor.enqueue(partialTask: PartialTask)
+    if (FuncDecl::isEnqueuePartialTaskName(ctx, name)) {
+      return getRequirement(KnownProtocolKind::Actor);
+    }
+
     return nullptr;
   }
 
@@ -456,7 +466,7 @@ DerivedConformance::declareDerivedProperty(Identifier name,
 
   VarDecl *propDecl = new (Context)
       VarDecl(/*IsStatic*/ isStatic, VarDecl::Introducer::Var,
-              /*IsCaptureList*/ false, SourceLoc(), name, parentDC);
+              SourceLoc(), name, parentDC);
   propDecl->setImplicit();
   propDecl->copyFormalAccessFrom(Nominal, /*sourceIsParentContext*/ true);
   propDecl->setInterfaceType(propertyInterfaceType);
@@ -629,8 +639,7 @@ DeclRefExpr *DerivedConformance::convertEnumToIndex(SmallVectorImpl<ASTNode> &st
   Type intType = C.getIntDecl()->getDeclaredInterfaceType();
 
   auto indexVar = new (C) VarDecl(/*IsStatic*/false, VarDecl::Introducer::Var,
-                                  /*IsCaptureList*/false, SourceLoc(),
-                                  C.getIdentifier(indexName),
+                                  SourceLoc(), C.getIdentifier(indexName),
                                   funcDecl);
   indexVar->setInterfaceType(intType);
   indexVar->setImplicit();
@@ -800,10 +809,8 @@ VarDecl *DerivedConformance::indexedVarDecl(char prefixChar, int index, Type typ
   auto indexStrRef = StringRef(indexStr.data(), indexStr.size());
 
   auto varDecl = new (C) VarDecl(/*IsStatic*/false, VarDecl::Introducer::Let,
-                                 /*IsCaptureList*/true, SourceLoc(),
-                                 C.getIdentifier(indexStrRef),
+                                 SourceLoc(), C.getIdentifier(indexStrRef),
                                  varContext);
   varDecl->setInterfaceType(type);
-  varDecl->setHasNonPatternBindingInit(true);
   return varDecl;
 }

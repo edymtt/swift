@@ -15,6 +15,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "ConstraintSystem.h"
+#include "TypeChecker.h"
 #include "swift/AST/GenericSignature.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/ProtocolConformance.h"
@@ -46,6 +47,10 @@ void ConstraintSystem::increaseScore(ScoreKind kind, unsigned value) {
 
     case SK_Unavailable:
       llvm::errs() << "use of an unavailable declaration";
+      break;
+
+    case SK_AsyncSyncMismatch:
+      llvm::errs() << "async/synchronous mismatch";
       break;
 
     case SK_ForwardTrailingClosure:

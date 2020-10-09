@@ -145,6 +145,9 @@ id swift_dynamicCastMetatypeToObjectConditional(const Metadata *metatype);
 
 // protocol _ObjectiveCBridgeable {
 struct _ObjectiveCBridgeableWitnessTable : WitnessTable {
+  #define _protocolWitnessSignedPointer(n) \
+    __ptrauth_swift_protocol_witness_function_pointer(SpecialPointerAuthDiscriminators::n##Discriminator) n
+
   static_assert(WitnessTableFirstRequirementOffset == 1,
                 "Witness table layout changed");
 
@@ -153,14 +156,14 @@ struct _ObjectiveCBridgeableWitnessTable : WitnessTable {
 
   // func _bridgeToObjectiveC() -> _ObjectiveCType
   SWIFT_CC(swift)
-  HeapObject *(*bridgeToObjectiveC)(
+  HeapObject *(*_protocolWitnessSignedPointer(bridgeToObjectiveC))(
                 SWIFT_CONTEXT OpaqueValue *self, const Metadata *Self,
                 const _ObjectiveCBridgeableWitnessTable *witnessTable);
 
   // class func _forceBridgeFromObjectiveC(x: _ObjectiveCType,
   //                                       inout result: Self?)
   SWIFT_CC(swift)
-  void (*forceBridgeFromObjectiveC)(
+  void (*_protocolWitnessSignedPointer(forceBridgeFromObjectiveC))(
          HeapObject *sourceValue,
          OpaqueValue *result,
          SWIFT_CONTEXT const Metadata *self,
@@ -170,7 +173,7 @@ struct _ObjectiveCBridgeableWitnessTable : WitnessTable {
   // class func _conditionallyBridgeFromObjectiveC(x: _ObjectiveCType,
   //                                              inout result: Self?) -> Bool
   SWIFT_CC(swift)
-  bool (*conditionallyBridgeFromObjectiveC)(
+  bool (*_protocolWitnessSignedPointer(conditionallyBridgeFromObjectiveC))(
          HeapObject *sourceValue,
          OpaqueValue *result,
          SWIFT_CONTEXT const Metadata *self,
@@ -861,6 +864,8 @@ tryCastToString(
       destLocation, destType, srcValue, srcType,
       destFailureType, srcFailureType,
       takeOnSuccess, mayDeferChecks);
+#else
+    SWIFT_FALLTHROUGH;
 #endif
   }
   default:
@@ -1801,7 +1806,7 @@ static tryCastFunctionType *selectCasterForDest(const Metadata *destType) {
     case ExistentialTypeRepresentation::Error: // => Error existential
       return tryCastToErrorExistential;
     }
-    swift_runtime_unreachable(
+    swift_unreachable(
       "Unknown existential type representation in dynamic cast dispatch");
   }
   case MetadataKind::Metatype:
@@ -1816,14 +1821,14 @@ static tryCastFunctionType *selectCasterForDest(const Metadata *destType) {
     // These are internal details of runtime-only structures,
     // so will never appear in compiler-generated types.
     // As such, they don't need support here.
-    swift_runtime_unreachable(
+    swift_unreachable(
       "Unexpected MetadataKind in dynamic cast dispatch");
     return nullptr;
   default:
     // If you see this message, then there is a new MetadataKind that I didn't
     // know about when I wrote this code.  Please figure out what it is, how to
     // handle it, and add a case for it.
-    swift_runtime_unreachable(
+    swift_unreachable(
       "Unknown MetadataKind in dynamic cast dispatch");
   }
 }

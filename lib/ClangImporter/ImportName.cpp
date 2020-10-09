@@ -1185,7 +1185,7 @@ static bool isNullableNSErrorType(
   return true;
 }
 
-Optional<ForeignAsyncConvention>
+Optional<ForeignAsyncConvention::Info>
 NameImporter::considerAsyncImport(
     const clang::ObjCMethodDecl *clangDecl,
     StringRef &baseName,
@@ -1211,7 +1211,8 @@ NameImporter::considerAsyncImport(
   // Determine whether the naming indicates that this is a completion
   // handler.
   Optional<StringRef> newBaseName;
-  if (isCompletionHandlerParamName(paramNames[completionHandlerParamNameIndex])) {
+  if (isCompletionHandlerParamName(
+          paramNames[completionHandlerParamNameIndex])) {
     // The argument label itself has an appropriate name.
   } else if (!hasCustomName && completionHandlerParamIndex == 0 &&
              (newBaseName = isCompletionHandlerInBaseName(baseName))) {
@@ -1226,7 +1227,8 @@ NameImporter::considerAsyncImport(
   // Used for returns once we've determined that the method cannot be
   // imported as async, even though it has what looks like a completion handler
   // parameter.
-  auto notAsync = [&](const char *reason) -> Optional<ForeignAsyncConvention> {
+  auto notAsync = [&](const char *reason) ->
+      Optional<ForeignAsyncConvention::Info> {
 #ifdef ASYNC_IMPORT_DEBUG
     llvm::errs() << "*** failed async import: " << reason << "\n";
     clangDecl->dump(llvm::errs());
@@ -1306,7 +1308,7 @@ NameImporter::considerAsyncImport(
   if (newBaseName && !hasCustomName)
     baseName = *newBaseName;
 
-  return ForeignAsyncConvention(
+  return ForeignAsyncConvention::Info(
       completionHandlerParamIndex, completionHandlerErrorParamIndex);
 }
 
@@ -2082,13 +2084,15 @@ ImportedName NameImporter::importName(const clang::NamedDecl *decl,
 bool NameImporter::forEachDistinctImportName(
     const clang::NamedDecl *decl, ImportNameVersion activeVersion,
     llvm::function_ref<bool(ImportedName, ImportNameVersion)> action) {
-  using ImportNameKey = std::pair<DeclName, EffectiveClangContext>;
+  using ImportNameKey = std::tuple<DeclName, EffectiveClangContext, bool>;
   SmallVector<ImportNameKey, 8> seenNames;
 
   ImportedName newName = importName(decl, activeVersion);
   if (!newName)
     return true;
-  ImportNameKey key(newName.getDeclName(), newName.getEffectiveContext());
+
+  ImportNameKey key(newName.getDeclName(), newName.getEffectiveContext(),
+                    newName.getAsyncInfo().hasValue());
   if (action(newName, activeVersion))
     seenNames.push_back(key);
 
@@ -2099,15 +2103,18 @@ bool NameImporter::forEachDistinctImportName(
         ImportedName newName = importName(decl, nameVersion);
         if (!newName)
           return;
-        ImportNameKey key(newName.getDeclName(), newName.getEffectiveContext());
+        ImportNameKey key(newName.getDeclName(), newName.getEffectiveContext(),
+                          newName.getAsyncInfo().hasValue());
 
         bool seen = llvm::any_of(
             seenNames, [&key](const ImportNameKey &existing) -> bool {
-              return key.first == existing.first &&
-                     key.second.equalsWithoutResolving(existing.second);
+              return std::get<0>(key) == std::get<0>(existing) &&
+                std::get<2>(key) == std::get<2>(existing) &&
+                std::get<1>(key).equalsWithoutResolving(std::get<1>(existing));
             });
         if (seen)
           return;
+
         if (action(newName, nameVersion))
           seenNames.push_back(key);
       });

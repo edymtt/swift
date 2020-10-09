@@ -17,6 +17,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "ConstraintSystem.h"
+#include "TypeChecker.h"
+
 using namespace swift;
 using namespace swift::constraints;
 
@@ -329,7 +331,7 @@ SolutionApplicationToFunctionResult ConstraintSystem::applySolution(
     if (!newBody)
       return SolutionApplicationToFunctionResult::Failure;
 
-    fn.setBody(newBody, /*isSingleExpression=*/false);
+    fn.setTypecheckedBody(newBody, /*isSingleExpression=*/false);
     if (closure) {
       solution.setExprTypes(closure);
     }

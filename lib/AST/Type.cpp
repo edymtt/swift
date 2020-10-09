@@ -3063,8 +3063,8 @@ operator()(SubstitutableType *maybeOpaqueType) const {
           }))
     return maybeOpaqueType;
 
-  // If the type still contains opaque types, recur.
-  if (substTy->hasOpaqueArchetype()) {
+  // If the type changed, but still contains opaque types, recur.
+  if (!substTy->isEqual(maybeOpaqueType) && substTy->hasOpaqueArchetype()) {
     return ::substOpaqueTypesWithUnderlyingTypes(
         substTy, inContext, contextExpansion, isContextWholeModule);
   }
@@ -3428,9 +3428,13 @@ bool AnyFunctionType::hasSameExtInfoAs(const AnyFunctionType *otherFn) {
   return getExtInfo().isEqualTo(otherFn->getExtInfo(), useClangTypes(this));
 }
 
-// [TODO: Store-SIL-Clang-type]
 ClangTypeInfo SILFunctionType::getClangTypeInfo() const {
-  return ClangTypeInfo();
+  if (!Bits.SILFunctionType.HasClangTypeInfo)
+    return ClangTypeInfo();
+  auto *info = getTrailingObjects<ClangTypeInfo>();
+  assert(!info->empty() &&
+         "If the ClangTypeInfo was empty, we shouldn't have stored it.");
+  return *info;
 }
 
 bool SILFunctionType::hasSameExtInfoAs(const SILFunctionType *otherFn) {
@@ -5042,27 +5046,6 @@ Type TypeBase::openAnyExistentialType(OpenedArchetypeType *&opened) {
   }
   opened = OpenedArchetypeType::get(this);
   return opened;
-}
-
-bool TypeBase::hasOpaqueArchetypePropertiesOrCases() {
-  if (auto *structDecl = getStructOrBoundGenericStruct()) {
-    for (auto *field : structDecl->getStoredProperties()) {
-      auto fieldTy = field->getInterfaceType()->getCanonicalType();
-      if (fieldTy->hasOpaqueArchetype() ||
-          fieldTy->hasOpaqueArchetypePropertiesOrCases())
-        return true;
-    }
-  }
-
-  if (auto *enumDecl = getEnumOrBoundGenericEnum()) {
-    for (auto *elt : enumDecl->getAllElements()) {
-      auto eltType = elt->getInterfaceType();
-      if (eltType->hasOpaqueArchetype() ||
-          eltType->getCanonicalType()->hasOpaqueArchetypePropertiesOrCases())
-        return true;
-    }
-  }
-  return false;
 }
 
 CanType swift::substOpaqueTypesWithUnderlyingTypes(CanType ty,

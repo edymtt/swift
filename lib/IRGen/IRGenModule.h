@@ -723,6 +723,11 @@ public:
       *DynamicReplacementLinkEntryPtrTy; // %link_entry*
   llvm::StructType *DynamicReplacementKeyTy; // { i32, i32}
 
+  llvm::StructType *SwiftContextTy;
+  llvm::StructType *SwiftTaskTy;
+  llvm::PointerType *SwiftContextPtrTy;
+  llvm::PointerType *SwiftTaskPtrTy;
+
   llvm::StructType *DifferentiabilityWitnessTy; // { i8*, i8* }
 
   llvm::GlobalVariable *TheTrivialPropertyDescriptor = nullptr;
@@ -1020,10 +1025,10 @@ public:
                         bool setIsNoInline = false);
 
   llvm::Constant *getOrCreateRetainFunction(const TypeInfo &objectTI, SILType t,
-                                            llvm::Type *llvmType);
+                              llvm::Type *llvmType, Atomicity atomicity);
 
   llvm::Constant *getOrCreateReleaseFunction(const TypeInfo &objectTI, SILType t,
-                                             llvm::Type *llvmType);
+                              llvm::Type *llvmType, Atomicity atomicity);
 
   llvm::Constant *getOrCreateOutlinedInitializeWithTakeFunction(
                               SILType objectType, const TypeInfo &objectTI,

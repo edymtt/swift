@@ -130,18 +130,17 @@ function(_add_host_variant_c_compile_flags target)
   _add_host_variant_c_compile_link_flags(${target})
 
   is_build_type_optimized("${CMAKE_BUILD_TYPE}" optimized)
-  is_build_type_with_debuginfo("${CMAKE_BUILD_TYPE}" debuginfo)
-
-  # Add -O0/-O2/-O3/-Os/-g/-momit-leaf-frame-pointer/... based on CMAKE_BUILD_TYPE.
-  target_compile_options(${target} PRIVATE "${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")
-
   if(optimized)
+    if("${CMAKE_BUILD_TYPE}" STREQUAL "MinSizeRel")
+      target_compile_options(${target} PRIVATE -Os)
+    else()
+      target_compile_options(${target} PRIVATE -O2)
+    endif()
+
     # Omit leaf frame pointers on x86 production builds (optimized, no debug
     # info, and no asserts).
-    if(NOT debuginfo AND NOT LLVM_ENABLE_ASSERTIONS)
-      # Unfortunately, this cannot be folded into the standard
-      # CMAKE_CXX_FLAGS_... because Apple multi-SDK builds use different
-      # architectures for different SDKs.
+    is_build_type_with_debuginfo("${CMAKE_BUILD_TYPE}" debug)
+    if(NOT debug AND NOT LLVM_ENABLE_ASSERTIONS)
       if(SWIFT_HOST_VARIANT_ARCH MATCHES "i?86")
         if(NOT SWIFT_COMPILER_IS_MSVC_LIKE)
           target_compile_options(${target} PRIVATE -momit-leaf-frame-pointer)
@@ -149,6 +148,27 @@ function(_add_host_variant_c_compile_flags target)
           target_compile_options(${target} PRIVATE /Oy)
         endif()
       endif()
+    endif()
+  else()
+    if(NOT SWIFT_COMPILER_IS_MSVC_LIKE)
+      target_compile_options(${target} PRIVATE -O0)
+    else()
+      target_compile_options(${target} PRIVATE /Od)
+    endif()
+  endif()
+
+  # CMake automatically adds the flags for debug info if we use MSVC/clang-cl.
+  if(NOT SWIFT_COMPILER_IS_MSVC_LIKE)
+    is_build_type_with_debuginfo("${CMAKE_BUILD_TYPE}" debuginfo)
+    if(debuginfo)
+      _compute_lto_flag("${SWIFT_TOOLS_ENABLE_LTO}" _lto_flag_out)
+      if(_lto_flag_out)
+        target_compile_options(${target} PRIVATE -gline-tables-only)
+      else()
+        target_compile_options(${target} PRIVATE -g)
+      endif()
+    else()
+      target_compile_options(${target} PRIVATE -g0)
     endif()
   endif()
 
@@ -270,6 +290,16 @@ function(_add_host_variant_c_compile_flags target)
       # necessary to avoid a dependency to libatomic
       target_compile_options(${target} PRIVATE -march=core2)
     endif()
+  endif()
+
+  # The LLVM backend is built with these defines on most 32-bit platforms,
+  # llvm/llvm-project@66395c9, which can cause incompatibilities with the Swift
+  # frontend if not built the same way.
+  if("${SWIFT_HOST_VARIANT_ARCH}" MATCHES "armv6|armv7|i686" AND
+     NOT (SWIFT_HOST_VARIANT_SDK STREQUAL ANDROID AND SWIFT_ANDROID_API_LEVEL LESS 24))
+    target_compile_definitions(${target} PRIVATE
+      _LARGEFILE_SOURCE
+      _FILE_OFFSET_BITS=64)
   endif()
 endfunction()
 
@@ -609,4 +639,10 @@ endfunction()
 macro(add_swift_tool_symlink name dest component)
   add_llvm_tool_symlink(${name} ${dest} ALWAYS_GENERATE)
   llvm_install_symlink(${name} ${dest} ALWAYS_GENERATE COMPONENT ${component})
+endmacro()
+
+# Declare that files in this library are built with LLVM's support
+# libraries available.
+macro(set_swift_llvm_is_available)
+  add_compile_options(-DSWIFT_LLVM_SUPPORT_IS_AVAILABLE)
 endmacro()

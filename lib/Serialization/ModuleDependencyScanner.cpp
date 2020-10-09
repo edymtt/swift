@@ -26,7 +26,7 @@ using llvm::ErrorOr;
 
 
 std::error_code ModuleDependencyScanner::findModuleFilesInDirectory(
-                                      AccessPathElem ModuleID,
+                                      ImportPath::Element ModuleID,
                                       const SerializedModuleBaseName &BaseName,
                                       SmallVectorImpl<char> *ModuleInterfacePath,
                                       std::unique_ptr<llvm::MemoryBuffer> *ModuleBuffer,
@@ -71,7 +71,7 @@ std::error_code ModuleDependencyScanner::findModuleFilesInDirectory(
 
 
 std::error_code PlaceholderSwiftModuleScanner::findModuleFilesInDirectory(
-    AccessPathElem ModuleID, const SerializedModuleBaseName &BaseName,
+    ImportPath::Element ModuleID, const SerializedModuleBaseName &BaseName,
     SmallVectorImpl<char> *ModuleInterfacePath,
     std::unique_ptr<llvm::MemoryBuffer> *ModuleBuffer,
     std::unique_ptr<llvm::MemoryBuffer> *ModuleDocBuffer,
@@ -98,8 +98,7 @@ std::error_code PlaceholderSwiftModuleScanner::findModuleFilesInDirectory(
 static std::vector<std::string> getCompiledCandidates(ASTContext &ctx,
                                                       StringRef moduleName,
                                                       StringRef interfacePath) {
-  return static_cast<SerializedModuleLoaderBase*>(ctx
-    .getModuleInterfaceLoader())->getCompiledModuleCandidatesForInterface(
+  return ctx.getModuleInterfaceChecker()->getCompiledModuleCandidatesForInterface(
       moduleName.str(), interfacePath);
 }
 

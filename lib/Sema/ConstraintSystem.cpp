@@ -20,6 +20,7 @@
 #include "CSDiagnostics.h"
 #include "CSFix.h"
 #include "SolutionResult.h"
+#include "TypeChecker.h"
 #include "TypeCheckType.h"
 #include "swift/AST/Initializer.h"
 #include "swift/AST/GenericEnvironment.h"
@@ -247,11 +248,7 @@ LookupResult &ConstraintSystem::lookupMember(Type base, DeclNameRef name) {
   if (result) return *result;
 
   // Lookup the member.
-  NameLookupOptions lookupOptions = defaultMemberLookupOptions;
-  if (isa<AbstractFunctionDecl>(DC))
-    lookupOptions |= NameLookupFlags::KnownPrivate;
-
-  result = TypeChecker::lookupMember(DC, base, name, lookupOptions);
+  result = TypeChecker::lookupMember(DC, base, name, defaultMemberLookupOptions);
 
   // If we aren't performing dynamic lookup, we're done.
   if (!*result || !base->isAnyObject())
@@ -1893,27 +1890,21 @@ static std::pair<Type, Type> getTypeOfReferenceWithSpecialTypeCheckingSemantics(
         CS.getConstraintLocator(locator, ConstraintLocator::FunctionResult),
         TVO_CanBindToNoEscape);
     FunctionType::Param arg(escapeClosure);
-    auto bodyClosure = FunctionType::get(
-        arg, result,
-        FunctionType::ExtInfoBuilder(FunctionType::Representation::Swift,
-                                     /*noescape*/ true,
-                                     /*throws*/ true,
-                                     DifferentiabilityKind::NonDifferentiable,
-                                     /*clangFunctionType*/ nullptr)
-            .build());
+    auto bodyClosure = FunctionType::get(arg, result,
+                                         FunctionType::ExtInfoBuilder()
+                                             .withNoEscape(true)
+                                             .withThrows(true)
+                                             .build());
     FunctionType::Param args[] = {
       FunctionType::Param(noescapeClosure),
       FunctionType::Param(bodyClosure, CS.getASTContext().getIdentifier("do")),
     };
 
-    auto refType = FunctionType::get(
-        args, result,
-        FunctionType::ExtInfoBuilder(FunctionType::Representation::Swift,
-                                     /*noescape*/ false,
-                                     /*throws*/ true,
-                                     DifferentiabilityKind::NonDifferentiable,
-                                     /*clangFunctionType*/ nullptr)
-            .build());
+    auto refType = FunctionType::get(args, result,
+                                     FunctionType::ExtInfoBuilder()
+                                         .withNoEscape(false)
+                                         .withThrows(true)
+                                         .build());
     return {refType, refType};
   }
   case DeclTypeCheckingSemantics::OpenExistential: {
@@ -1932,26 +1923,20 @@ static std::pair<Type, Type> getTypeOfReferenceWithSpecialTypeCheckingSemantics(
         CS.getConstraintLocator(locator, ConstraintLocator::FunctionResult),
         TVO_CanBindToNoEscape);
     FunctionType::Param bodyArgs[] = {FunctionType::Param(openedTy)};
-    auto bodyClosure = FunctionType::get(
-        bodyArgs, result,
-        FunctionType::ExtInfoBuilder(FunctionType::Representation::Swift,
-                                     /*noescape*/ true,
-                                     /*throws*/ true,
-                                     DifferentiabilityKind::NonDifferentiable,
-                                     /*clangFunctionType*/ nullptr)
-            .build());
+    auto bodyClosure = FunctionType::get(bodyArgs, result,
+                                         FunctionType::ExtInfoBuilder()
+                                             .withNoEscape(true)
+                                             .withThrows(true)
+                                             .build());
     FunctionType::Param args[] = {
       FunctionType::Param(existentialTy),
       FunctionType::Param(bodyClosure, CS.getASTContext().getIdentifier("do")),
     };
-    auto refType = FunctionType::get(
-        args, result,
-        FunctionType::ExtInfoBuilder(FunctionType::Representation::Swift,
-                                     /*noescape*/ false,
-                                     /*throws*/ true,
-                                     DifferentiabilityKind::NonDifferentiable,
-                                     /*clangFunctionType*/ nullptr)
-            .build());
+    auto refType = FunctionType::get(args, result,
+                                     FunctionType::ExtInfoBuilder()
+                                         .withNoEscape(false)
+                                         .withThrows(true)
+                                         .build());
     return {refType, refType};
   }
   }
@@ -2149,6 +2134,244 @@ std::pair<Type, bool> ConstraintSystem::adjustTypeOfOverloadReference(
   }
 
   llvm_unreachable("Unhandled OverloadChoiceKind in switch.");
+}
+
+/// Whether the declaration is considered 'async'.
+static bool isDeclAsync(ValueDecl *value) {
+  if (auto func = dyn_cast<AbstractFunctionDecl>(value))
+    return func->isAsyncContext();
+
+  return false;
+}
+
+/// Walk a closure AST to determine its effects.
+///
+/// \returns a function's extended info describing the effects, as
+/// determined syntactically.
+FunctionType::ExtInfo ConstraintSystem::closureEffects(ClosureExpr *expr) {
+  auto known = closureEffectsCache.find(expr);
+  if (known != closureEffectsCache.end())
+    return known->second;
+
+  // A walker that looks for 'try' and 'throw' expressions
+  // that aren't nested within closures, nested declarations,
+  // or exhaustive catches.
+  class FindInnerThrows : public ASTWalker {
+    ConstraintSystem &CS;
+    DeclContext *DC;
+    bool FoundThrow = false;
+
+    std::pair<bool, Expr *> walkToExprPre(Expr *expr) override {
+      // If we've found a 'try', record it and terminate the traversal.
+      if (isa<TryExpr>(expr)) {
+        FoundThrow = true;
+        return { false, nullptr };
+      }
+
+      // Don't walk into a 'try!' or 'try?'.
+      if (isa<ForceTryExpr>(expr) || isa<OptionalTryExpr>(expr)) {
+        return { false, expr };
+      }
+
+      // Do not recurse into other closures.
+      if (isa<ClosureExpr>(expr))
+        return { false, expr };
+
+      return { true, expr };
+    }
+
+    bool walkToDeclPre(Decl *decl) override {
+      // Do not walk into function or type declarations.
+      if (!isa<PatternBindingDecl>(decl))
+        return false;
+
+      return true;
+    }
+
+    bool isSyntacticallyExhaustive(DoCatchStmt *stmt) {
+      for (auto catchClause : stmt->getCatches()) {
+        for (auto &LabelItem : catchClause->getMutableCaseLabelItems()) {
+          if (isSyntacticallyExhaustive(catchClause->getStartLoc(),
+                                        LabelItem))
+            return true;
+        }
+      }
+
+      return false;
+    }
+
+    bool isSyntacticallyExhaustive(SourceLoc CatchLoc,
+                                   CaseLabelItem &LabelItem) {
+      // If it's obviously non-exhaustive, great.
+      if (LabelItem.getGuardExpr())
+        return false;
+
+      // If we can show that it's exhaustive without full
+      // type-checking, great.
+      if (LabelItem.isSyntacticallyExhaustive())
+        return true;
+
+      // Okay, resolve the pattern.
+      Pattern *pattern = LabelItem.getPattern();
+      if (!LabelItem.isPatternResolved()) {
+        pattern = TypeChecker::resolvePattern(pattern, DC,
+                                       /*isStmtCondition*/false);
+        if (!pattern) return false;
+
+        // Save that aside while we explore the type.
+        LabelItem.setPattern(pattern, /*resolved=*/true);
+      }
+
+      // Require the pattern to have a particular shape: a number
+      // of is-patterns applied to an irrefutable pattern.
+      pattern = pattern->getSemanticsProvidingPattern();
+      while (auto isp = dyn_cast<IsPattern>(pattern)) {
+        Type castType;
+        if (auto castTypeRepr = isp->getCastTypeRepr()) {
+          castType = TypeResolution::forContextual(
+                         DC, TypeResolverContext::InExpression,
+                         /*unboundTyOpener*/ nullptr)
+                         .resolveType(castTypeRepr);
+        } else {
+          castType = isp->getCastType();
+        }
+
+        if (castType->hasError()) {
+          return false;
+        }
+
+        if (!isp->hasSubPattern()) {
+          pattern = nullptr;
+          break;
+        } else {
+          pattern = isp->getSubPattern()->getSemanticsProvidingPattern();
+        }
+      }
+      if (pattern && pattern->isRefutablePattern()) {
+        return false;
+      }
+
+      // Okay, now it should be safe to coerce the pattern.
+      // Pull the top-level pattern back out.
+      pattern = LabelItem.getPattern();
+      Type exnType = CS.getASTContext().getErrorDecl()->getDeclaredInterfaceType();
+
+      if (!exnType)
+        return false;
+      auto contextualPattern =
+          ContextualPattern::forRawPattern(pattern, DC);
+      pattern = TypeChecker::coercePatternToType(
+        contextualPattern, exnType, TypeResolverContext::InExpression);
+      if (!pattern)
+        return false;
+
+      LabelItem.setPattern(pattern, /*resolved=*/true);
+      return LabelItem.isSyntacticallyExhaustive();
+    }
+
+    std::pair<bool, Stmt *> walkToStmtPre(Stmt *stmt) override {
+      // If we've found a 'throw', record it and terminate the traversal.
+      if (isa<ThrowStmt>(stmt)) {
+        FoundThrow = true;
+        return { false, nullptr };
+      }
+
+      // Handle do/catch differently.
+      if (auto doCatch = dyn_cast<DoCatchStmt>(stmt)) {
+        // Only walk into the 'do' clause of a do/catch statement
+        // if the catch isn't syntactically exhaustive.
+        if (!isSyntacticallyExhaustive(doCatch)) {
+          if (!doCatch->getBody()->walk(*this))
+            return { false, nullptr };
+        }
+
+        // Walk into all the catch clauses.
+        for (auto catchClause : doCatch->getCatches()) {
+          if (!catchClause->walk(*this))
+            return { false, nullptr };
+        }
+
+        // We've already walked all the children we care about.
+        return { false, stmt };
+      }
+
+      return { true, stmt };
+    }
+
+  public:
+    FindInnerThrows(ConstraintSystem &cs, DeclContext *dc)
+        : CS(cs), DC(dc) {}
+
+    bool foundThrow() { return FoundThrow; }
+  };
+
+  // A walker that looks for 'async' and 'await' expressions
+  // that aren't nested within closures or nested declarations.
+  class FindInnerAsync : public ASTWalker {
+    bool FoundAsync = false;
+
+    std::pair<bool, Expr *> walkToExprPre(Expr *expr) override {
+      // If we've found an 'await', record it and terminate the traversal.
+      if (isa<AwaitExpr>(expr)) {
+        FoundAsync = true;
+        return { false, nullptr };
+      }
+
+      // Do not recurse into other closures.
+      if (isa<ClosureExpr>(expr))
+        return { false, expr };
+
+      return { true, expr };
+    }
+
+    bool walkToDeclPre(Decl *decl) override {
+      // Do not walk into function or type declarations.
+      if (!isa<PatternBindingDecl>(decl))
+        return false;
+
+      return true;
+    }
+
+  public:
+    bool foundAsync() { return FoundAsync; }
+  };
+
+  // If either 'throws' or 'async' was explicitly specified, use that
+  // set of effects.
+  bool throws = expr->getThrowsLoc().isValid();
+  bool async = expr->getAsyncLoc().isValid();
+  if (throws || async) {
+    return ASTExtInfoBuilder()
+      .withThrows(throws)
+      .withAsync(async)
+      .build();
+  }
+
+  // Scan the body to determine the effects.
+  auto body = expr->getBody();
+  if (!body)
+    return FunctionType::ExtInfo();
+
+  auto throwFinder = FindInnerThrows(*this, expr);
+  body->walk(throwFinder);
+  auto asyncFinder = FindInnerAsync();
+  body->walk(asyncFinder);
+  auto result = ASTExtInfoBuilder()
+    .withThrows(throwFinder.foundThrow())
+    .withAsync(asyncFinder.foundAsync())
+    .build();
+  closureEffectsCache[expr] = result;
+  return result;
+}
+
+bool ConstraintSystem::isAsynchronousContext(DeclContext *dc) {
+  if (auto func = dyn_cast<AbstractFunctionDecl>(dc))
+    return isDeclAsync(func);
+
+  if (auto closure = dyn_cast<ClosureExpr>(dc))
+    return closureEffects(closure).isAsync();
+
+  return false;
 }
 
 void ConstraintSystem::bindOverloadType(
@@ -2475,6 +2698,11 @@ void ConstraintSystem::resolveOverload(ConstraintLocator *locator,
   assert(!refType->hasTypeParameter() && "Cannot have a dependent type here");
 
   if (auto *decl = choice.getDeclOrNull()) {
+    // If we're choosing an asynchronous declaration within a synchronous
+    // context, or vice-versa, increase the async/async mismatch score.
+    if (isAsynchronousContext(useDC) != isDeclAsync(decl))
+      increaseScore(SK_AsyncSyncMismatch);
+
     // If we're binding to an init member, the 'throws' need to line up
     // between the bound and reference types.
     if (auto CD = dyn_cast<ConstructorDecl>(decl)) {
@@ -3930,11 +4158,11 @@ bool constraints::hasAppliedSelf(const OverloadChoice &choice,
          doesMemberRefApplyCurriedSelf(baseType, decl);
 }
 
-bool constraints::conformsToKnownProtocol(ConstraintSystem &cs, Type type,
+bool constraints::conformsToKnownProtocol(DeclContext *dc, Type type,
                                           KnownProtocolKind protocol) {
   if (auto *proto =
-          TypeChecker::getProtocol(cs.getASTContext(), SourceLoc(), protocol))
-    return (bool)TypeChecker::conformsToProtocol(type, proto, cs.DC);
+          TypeChecker::getProtocol(dc->getASTContext(), SourceLoc(), protocol))
+    return (bool)TypeChecker::conformsToProtocol(type, proto, dc);
   return false;
 }
 
@@ -3959,7 +4187,8 @@ Type constraints::isRawRepresentable(
     ConstraintSystem &cs, Type type,
     KnownProtocolKind rawRepresentableProtocol) {
   Type rawTy = isRawRepresentable(cs, type);
-  if (!rawTy || !conformsToKnownProtocol(cs, rawTy, rawRepresentableProtocol))
+  if (!rawTy ||
+      !conformsToKnownProtocol(cs.DC, rawTy, rawRepresentableProtocol))
     return Type();
 
   return rawTy;
@@ -4253,9 +4482,7 @@ bool constraints::isStandardComparisonOperator(ASTNode node) {
   if (!expr) return false;
 
   if (auto opName = getOperatorName(expr)) {
-    return opName->is("==") || opName->is("!=") || opName->is("===") ||
-           opName->is("!==") || opName->is("<") || opName->is(">") ||
-           opName->is("<=") || opName->is(">=");
+    return opName->isStandardComparisonOperator();
   }
   return false;
 }
@@ -4970,4 +5197,58 @@ void ConstraintSystem::recordFixedRequirement(ConstraintLocator *reqLocator,
     FixedRequirements.insert(
         std::make_tuple(GP, reqKind, requirementTy.getPointer()));
   }
+}
+
+// Replace any error types encountered with holes.
+Type ConstraintSystem::getVarType(const VarDecl *var) {
+  auto type = var->getType();
+
+  // If this declaration is used as part of a code completion
+  // expression, solver needs to glance over the fact that
+  // it might be invalid to avoid failing constraint generation
+  // and produce completion results.
+  if (!isForCodeCompletion())
+    return type;
+
+  return type.transform([&](Type type) {
+    if (!type->is<ErrorType>())
+      return type;
+    return HoleType::get(Context, const_cast<VarDecl *>(var));
+  });
+}
+
+bool ConstraintSystem::isReadOnlyKeyPathComponent(
+    const AbstractStorageDecl *storage, SourceLoc referenceLoc) {
+  // See whether key paths can store to this component. (Key paths don't
+  // get any special power from being formed in certain contexts, such
+  // as the ability to assign to `let`s in initialization contexts, so
+  // we pass null for the DC to `isSettable` here.)
+  if (!getASTContext().isSwiftVersionAtLeast(5)) {
+    // As a source-compatibility measure, continue to allow
+    // WritableKeyPaths to be formed in the same conditions we did
+    // in previous releases even if we should not be able to set
+    // the value in this context.
+    if (!storage->isSettable(DC)) {
+      // A non-settable component makes the key path read-only, unless
+      // a reference-writable component shows up later.
+      return true;
+    }
+  } else if (!storage->isSettable(nullptr) ||
+             !storage->isSetterAccessibleFrom(DC)) {
+    // A non-settable component makes the key path read-only, unless
+    // a reference-writable component shows up later.
+    return true;
+  }
+
+  // If the setter is unavailable, then the keypath ought to be read-only
+  // in this context.
+  if (auto setter = storage->getOpaqueAccessor(AccessorKind::Set)) {
+    auto maybeUnavail =
+        TypeChecker::checkDeclarationAvailability(setter, referenceLoc, DC);
+    if (maybeUnavail.hasValue()) {
+      return true;
+    }
+  }
+
+  return false;
 }

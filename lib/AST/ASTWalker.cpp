@@ -55,6 +55,7 @@
 
 #include "swift/AST/ASTWalker.h"
 #include "swift/AST/ASTVisitor.h"
+#include "swift/AST/GenericParamList.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/PrettyStackTrace.h"
 using namespace swift;
@@ -130,7 +131,7 @@ class Traversal : public ASTVisitor<Traversal, Expr*, Stmt*,
     // Must check this first in case extensions have not been bound yet
     if (Walker.shouldWalkIntoGenericParams()) {
       if (auto *params = GC->getParsedGenericParams()) {
-        visitGenericParamList(params);
+        doIt(params);
       }
       return true;
     }
@@ -252,7 +253,7 @@ class Traversal : public ASTVisitor<Traversal, Expr*, Stmt*,
   
   bool visitOpaqueTypeDecl(OpaqueTypeDecl *OTD) {
     if (Walker.shouldWalkIntoGenericParams() && OTD->getGenericParams()) {
-      if (visitGenericParamList(OTD->getGenericParams()))
+      if (doIt(OTD->getGenericParams()))
         return true;
     }
     return false;
@@ -436,22 +437,6 @@ class Traversal : public ASTVisitor<Traversal, Expr*, Stmt*,
         return true;
       }
     }
-    return false;
-  }
-
-  bool visitGenericParamList(GenericParamList *GPL) {
-    // Visit generic params
-    for (auto &P : GPL->getParams()) {
-      if (doIt(P))
-        return true;
-    }
-
-    // Visit param conformance
-    for (auto Req : GPL->getRequirements()) {
-      if (doIt(Req))
-        return true;
-    }
-
     return false;
   }
 
@@ -1342,10 +1327,26 @@ public:
         return true;
       break;
     case RequirementReprKind::LayoutConstraint:
-      if (doIt(Req.getFirstTypeRepr()))
+      if (doIt(Req.getSubjectRepr()))
         return true;
       break;
     }
+    return false;
+  }
+
+  bool doIt(GenericParamList *GPL) {
+    // Visit generic params
+    for (auto &P : GPL->getParams()) {
+      if (doIt(P))
+        return true;
+    }
+
+    // Visit param conformance
+    for (auto Req : GPL->getRequirements()) {
+      if (doIt(Req))
+        return true;
+    }
+
     return false;
   }
 };
@@ -1477,7 +1478,7 @@ Stmt *Traversal::visitGuardStmt(GuardStmt *US) {
   if (doIt(US->getCond()))
     return nullptr;
   
-  if (Stmt *S2 = doIt(US->getBody()))
+  if (BraceStmt *S2 = cast_or_null<BraceStmt>(doIt(US->getBody())))
     US->setBody(S2);
   else
     return nullptr;
@@ -1630,7 +1631,7 @@ Stmt *Traversal::visitCaseStmt(CaseStmt *S) {
     }
   }
 
-  if (Stmt *newBody = doIt(S->getBody()))
+  if (BraceStmt *newBody = cast_or_null<BraceStmt>(doIt(S->getBody())))
     S->setBody(newBody);
   else
     return nullptr;
@@ -1875,5 +1876,9 @@ StmtConditionElement *StmtConditionElement::walk(ASTWalker &walker) {
 }
 
 bool Decl::walk(ASTWalker &walker) {
+  return Traversal(walker).doIt(this);
+}
+
+bool GenericParamList::walk(ASTWalker &walker) {
   return Traversal(walker).doIt(this);
 }

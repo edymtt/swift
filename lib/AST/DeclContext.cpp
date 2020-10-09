@@ -445,52 +445,6 @@ bool DeclContext::isInnermostContextGeneric() const {
   return false;
 }
 
-bool
-DeclContext::isCascadingContextForLookup(bool functionsAreNonCascading) const {
-  // FIXME: This is explicitly checking for attributes in some cases because
-  // it can be called before access control is computed.
-  switch (getContextKind()) {
-  case DeclContextKind::AbstractClosureExpr:
-    break;
-
-  case DeclContextKind::SerializedLocal:
-    llvm_unreachable("should not perform lookups in deserialized contexts");
-
-  case DeclContextKind::Initializer:
-    // Default arguments still require a type.
-    if (isa<DefaultArgumentInitializer>(this))
-      return false;
-    break;
-
-  case DeclContextKind::TopLevelCodeDecl:
-    // FIXME: Pattern initializers at top-level scope end up here.
-    return true;
-
-  case DeclContextKind::AbstractFunctionDecl:
-    if (functionsAreNonCascading)
-      return false;
-    break;
-
-  case DeclContextKind::SubscriptDecl:
-    break;
-
-  case DeclContextKind::EnumElementDecl:
-    break;
-
-  case DeclContextKind::Module:
-  case DeclContextKind::FileUnit:
-    return true;
-
-  case DeclContextKind::GenericTypeDecl:
-    break;
-
-  case DeclContextKind::ExtensionDecl:
-    return true;
-  }
-
-  return getParent()->isCascadingContextForLookup(true);
-}
-
 unsigned DeclContext::getSyntacticDepth() const {
   // Module scope == depth 0.
   if (isModuleScopeContext())
@@ -810,11 +764,33 @@ ArrayRef<Decl *> IterableDeclContext::getSemanticMembers() const {
       ArrayRef<Decl *>());
 }
 
+void IterableDeclContext::addMemberPreservingSourceOrder(Decl *member) {
+  auto &SM = getASTContext().SourceMgr;
+
+  SourceLoc start = member->getStartLoc();
+  Decl *hint = nullptr;
+
+  for (auto *existingMember : getMembers()) {
+    if (existingMember->isImplicit())
+      continue;
+
+    if (isa<EnumCaseDecl>(existingMember) ||
+        isa<IfConfigDecl>(existingMember))
+      continue;
+
+    if (!SM.isBeforeInBuffer(existingMember->getEndLoc(), start))
+      break;
+
+    hint = existingMember;
+  }
+
+  addMember(member, hint, /*insertAtHead=*/hint == nullptr);
+}
+
 /// Add a member to this context.
-void IterableDeclContext::addMember(Decl *member, Decl *Hint) {
+void IterableDeclContext::addMember(Decl *member, Decl *hint, bool insertAtHead) {
   // Add the member to the list of declarations without notification.
-  addMemberSilently(member, Hint);
-  ++MemberCount;
+  addMemberSilently(member, hint, insertAtHead);
 
   // Notify our parent declaration that we have added the member, which can
   // be used to update the lookup tables.
@@ -837,29 +813,83 @@ void IterableDeclContext::addMember(Decl *member, Decl *Hint) {
   }
 }
 
-void IterableDeclContext::addMemberSilently(Decl *member, Decl *hint) const {
+void IterableDeclContext::addMemberSilently(Decl *member, Decl *hint,
+                                            bool insertAtHead) const {
   assert(!isa<AccessorDecl>(member) && "Accessors should not be added here");
   assert(!member->NextDecl && "Already added to a container");
 
-  // If there is a hint decl that specifies where to add this, just
-  // link into the chain immediately following it.
-  if (hint) {
+#ifndef NDEBUG
+  auto checkSourceRange = [&](Decl *prev, Decl *next) {
+    if (!member->getDeclContext()->getParentSourceFile())
+      return;
+
+    auto shouldSkip = [](Decl *d) {
+      if (isa<VarDecl>(d) || isa<EnumElementDecl>(d) || isa<IfConfigDecl>(d))
+        return true;
+
+      if (d->isImplicit())
+        return true;
+
+      return false;
+    };
+
+    if (shouldSkip(prev) || shouldSkip(next))
+      return;
+
+    SourceLoc prevEnd = prev->getEndLoc();
+    SourceLoc nextStart = next->getStartLoc();
+
+    if (!prevEnd.isValid() || !nextStart.isValid())
+      return;
+
+    if (getASTContext().SourceMgr.isBeforeInBuffer(prevEnd, nextStart))
+      return;
+
+    llvm::errs() << "Source ranges out of order in addMember():\n";
+    prev->dump(llvm::errs());
+    next->dump(llvm::errs());
+    abort();
+  };
+#endif
+
+  // Empty list.
+  if (!FirstDeclAndLazyMembers.getPointer()) {
+    assert(hint == nullptr);
+
+    FirstDeclAndLazyMembers.setPointer(member);
+    LastDeclAndKind.setPointer(member);
+
+  // Insertion at the head.
+  } else if (insertAtHead) {
+    assert(hint == nullptr);
+
+    member->NextDecl = FirstDeclAndLazyMembers.getPointer();
+    FirstDeclAndLazyMembers.setPointer(member);
+
+  // Insertion at the tail.
+  } else if (hint == nullptr) {
+    auto *last = LastDeclAndKind.getPointer();
+
+#ifndef NDEBUG
+    checkSourceRange(last, member);
+#endif
+
+    last->NextDecl = member;
+    LastDeclAndKind.setPointer(member);
+
+  // Insertion after 'hint' (which may be the tail).
+  } else {
+#ifndef NDEBUG
+    checkSourceRange(hint, member);
+#endif
+
     member->NextDecl = hint->NextDecl;
     hint->NextDecl = member;
 
-    // If the hint was the last in the parent context's chain, update it.
+    // Handle case where the 'hint' is the tail.
     if (LastDeclAndKind.getPointer() == hint)
       LastDeclAndKind.setPointer(member);
-    return;
   }
-
-  if (auto last = LastDeclAndKind.getPointer()) {
-    last->NextDecl = member;
-    assert(last != member && "Simple cycle in decl list");
-  } else {
-    FirstDeclAndLazyMembers.setPointer(member);
-  }
-  LastDeclAndKind.setPointer(member);
 }
 
 void IterableDeclContext::setMemberLoader(LazyMemberLoader *loader,
@@ -891,12 +921,6 @@ bool IterableDeclContext::hasUnparsedMembers() const {
   }
 
   return true;
-}
-
-unsigned IterableDeclContext::getMemberCount() const {
-  if (hasUnparsedMembers())
-    loadAllMembers();
-  return MemberCount;
 }
 
 void IterableDeclContext::loadAllMembers() const {
@@ -986,7 +1010,7 @@ bool IterableDeclContext::areTokensHashedForThisBodyInsteadOfInterfaceHash()
   // corresponding to the fingerprinted nominal dependency node.
   if (isa<ExtensionDecl>(this))
     return false;
-  return getASTContext().LangOpts.EnableTypeFingerprints;
+  return true;
 }
 
 /// Return the DeclContext to compare when checking private access in

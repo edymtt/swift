@@ -30,10 +30,15 @@ using namespace swift;
 /// Returns whether the type represented by the given ClassDecl inherits from a
 /// type which conforms to the given protocol.
 static bool superclassConformsTo(ClassDecl *target, KnownProtocolKind kpk) {
-  if (!target || !target->getSuperclass() || target->hasCircularInheritance()) {
+  if (!target) {
     return false;
   }
-  return !target->getSuperclassDecl()
+
+  auto superclass = target->getSuperclassDecl();
+  if (!superclass)
+    return false;
+
+  return !superclass
               ->getModuleContext()
               ->lookupConformance(target->getSuperclass(),
                                   target->getASTContext().getProtocol(kpk))
@@ -342,8 +347,7 @@ static VarDecl *createKeyedContainer(ASTContext &C, DeclContext *DC,
 
   // let container : Keyed*Container<KeyType>
   auto *containerDecl = new (C) VarDecl(/*IsStatic=*/false, introducer,
-                                        /*IsCaptureList=*/false, SourceLoc(),
-                                        C.Id_container, DC);
+                                        SourceLoc(), C.Id_container, DC);
   containerDecl->setImplicit();
   containerDecl->setInterfaceType(containerType);
   return containerDecl;

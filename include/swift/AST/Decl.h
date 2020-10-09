@@ -62,6 +62,7 @@ namespace swift {
   class DynamicSelfType;
   class Type;
   class Expr;
+  class CaptureListExpr;
   class DeclRefExpr;
   class ForeignAsyncConvention;
   class ForeignErrorConvention;
@@ -69,6 +70,7 @@ namespace swift {
   class BraceStmt;
   class DeclAttributes;
   class GenericContext;
+  class GenericParamList;
   class GenericSignature;
   class GenericTypeParamDecl;
   class GenericTypeParamType;
@@ -87,6 +89,7 @@ namespace swift {
   class ProtocolType;
   struct RawComment;
   enum class ResilienceExpansion : unsigned;
+  class TrailingWhereClause;
   class TypeAliasDecl;
   class Stmt;
   class SubscriptDecl;
@@ -239,10 +242,14 @@ struct OverloadSignature {
   /// Whether this declaration has an opaque return type.
   unsigned HasOpaqueReturnType : 1;
 
+  /// Whether this declaration is 'async'
+  unsigned HasAsync : 1;
+
   OverloadSignature()
       : UnaryOperator(UnaryOperatorKind::None), IsInstanceMember(false),
         IsVariable(false), IsFunction(false), InProtocolExtension(false),
-        InExtensionOfGenericType(false), HasOpaqueReturnType(false) {}
+        InExtensionOfGenericType(false), HasOpaqueReturnType(false),
+        HasAsync(false) {}
 };
 
 /// Determine whether two overload signatures conflict.
@@ -348,20 +355,12 @@ protected:
     IsStatic : 1
   );
 
-  SWIFT_INLINE_BITFIELD(VarDecl, AbstractStorageDecl, 1+1+1+1+1+1+1+1,
+  SWIFT_INLINE_BITFIELD(VarDecl, AbstractStorageDecl, 1+1+1+1+1+1,
     /// Encodes whether this is a 'let' binding.
     Introducer : 1,
 
-    /// Whether this declaration was an element of a capture list.
-    IsCaptureList : 1,
-                        
     /// Whether this declaration captures the 'self' param under the same name.
     IsSelfParamCapture : 1,
-
-    /// Whether this vardecl has an initial value bound to it in a way
-    /// that isn't represented in the AST with an initializer in the pattern
-    /// binding.  This happens in cases like "for i in ...", switch cases, etc.
-    HasNonPatternBindingInit : 1,
 
     /// Whether this is a property used in expressions in the debugger.
     /// It is up to the debugger to instruct SIL how to access this variable.
@@ -454,14 +453,7 @@ protected:
                         /// Whether we have computed the above.
                         IsTransparentComputed : 1);
 
-  SWIFT_INLINE_BITFIELD(ConstructorDecl, AbstractFunctionDecl, 3+1+1,
-    /// The body initialization kind (+1), or zero if not yet computed.
-    ///
-    /// This value is cached but is not serialized, because it is a property
-    /// of the definition of the constructor that is useful only to semantic
-    /// analysis and SIL generation.
-    ComputedBodyInitKind : 3,
-
+  SWIFT_INLINE_BITFIELD(ConstructorDecl, AbstractFunctionDecl, 1+1,
     /// Whether this constructor can fail, by building an Optional type.
     Failable : 1,
 
@@ -581,7 +573,7 @@ protected:
     HasAnyUnavailableValues : 1
   );
 
-  SWIFT_INLINE_BITFIELD(ModuleDecl, TypeDecl, 1+1+1+1+1+1+1+1+1,
+  SWIFT_INLINE_BITFIELD(ModuleDecl, TypeDecl, 1+1+1+1+1+1+1+1+1+1,
     /// If the module was or is being compiled with `-enable-testing`.
     TestingEnabled : 1,
 
@@ -610,7 +602,10 @@ protected:
     IsNonSwiftModule : 1,
 
     /// Whether this module is the main module.
-    IsMainModule : 1
+    IsMainModule : 1,
+
+    /// Whether this module has incremental dependency information available.
+    HasIncrementalInfo : 1
   );
 
   SWIFT_INLINE_BITFIELD(PrecedenceGroupDecl, Decl, 1+2,
@@ -955,9 +950,6 @@ public:
   /// If this returns true, the decl can be safely casted to ValueDecl.
   bool isPotentiallyOverridable() const;
 
-  /// Returns true if this Decl cannot be seen by any other source file
-  bool isPrivateToEnclosingFile() const;
-
   /// If an alternative module name is specified for this decl, e.g. using
   /// @_originalDefinedIn attribute, this function returns this module name.
   StringRef getAlternateModuleName() const;
@@ -1017,358 +1009,6 @@ void *allocateMemoryForDecl(AllocatorTy &allocator, size_t baseSize,
     mem = reinterpret_cast<char *>(mem) + alignof(DeclTy);
   return mem;
 }
-
-enum class RequirementReprKind : unsigned {
-  /// A type bound T : P, where T is a type that depends on a generic
-  /// parameter and P is some type that should bound T, either as a concrete
-  /// supertype or a protocol to which T must conform.
-  TypeConstraint,
-
-  /// A same-type requirement T == U, where T and U are types that shall be
-  /// equivalent.
-  SameType,
-
-  /// A layout bound T : L, where T is a type that depends on a generic
-  /// parameter and L is some layout specification that should bound T.
-  LayoutConstraint,
-
-  // Note: there is code that packs this enum in a 2-bit bitfield.  Audit users
-  // when adding enumerators.
-};
-
-/// A single requirement in a 'where' clause, which places additional
-/// restrictions on the generic parameters or associated types of a generic
-/// function, type, or protocol.
-///
-/// This always represents a requirement spelled in the source code.  It is
-/// never generated implicitly.
-///
-/// \c GenericParamList assumes these are POD-like.
-class RequirementRepr {
-  SourceLoc SeparatorLoc;
-  RequirementReprKind Kind : 2;
-  bool Invalid : 1;
-  TypeRepr *FirstType;
-
-  /// The second element represents the right-hand side of the constraint.
-  /// It can be e.g. a type or a layout constraint.
-  union {
-    TypeRepr *SecondType;
-    LayoutConstraintLoc SecondLayout;
-  };
-
-  /// Set during deserialization; used to print out the requirements accurately
-  /// for the generated interface.
-  StringRef AsWrittenString;
-
-  RequirementRepr(SourceLoc SeparatorLoc, RequirementReprKind Kind,
-                  TypeRepr *FirstType, TypeRepr *SecondType)
-    : SeparatorLoc(SeparatorLoc), Kind(Kind), Invalid(false),
-      FirstType(FirstType), SecondType(SecondType) { }
-
-  RequirementRepr(SourceLoc SeparatorLoc, RequirementReprKind Kind,
-                  TypeRepr *FirstType, LayoutConstraintLoc SecondLayout)
-    : SeparatorLoc(SeparatorLoc), Kind(Kind), Invalid(false),
-      FirstType(FirstType), SecondLayout(SecondLayout) { }
-
-  void printImpl(ASTPrinter &OS) const;
-
-public:
-  /// Construct a new type-constraint requirement.
-  ///
-  /// \param Subject The type that must conform to the given protocol or
-  /// composition, or be a subclass of the given class type.
-  /// \param ColonLoc The location of the ':', or an invalid location if
-  /// this requirement was implied.
-  /// \param Constraint The protocol or protocol composition to which the
-  /// subject must conform, or superclass from which the subject must inherit.
-  static RequirementRepr getTypeConstraint(TypeRepr *Subject,
-                                           SourceLoc ColonLoc,
-                                           TypeRepr *Constraint) {
-    return { ColonLoc, RequirementReprKind::TypeConstraint, Subject, Constraint };
-  }
-
-  /// Construct a new same-type requirement.
-  ///
-  /// \param FirstType The first type.
-  /// \param EqualLoc The location of the '==' in the same-type constraint, or
-  /// an invalid location if this requirement was implied.
-  /// \param SecondType The second type.
-  static RequirementRepr getSameType(TypeRepr *FirstType,
-                                     SourceLoc EqualLoc,
-                                     TypeRepr *SecondType) {
-    return { EqualLoc, RequirementReprKind::SameType, FirstType, SecondType };
-  }
-
-  /// Construct a new layout-constraint requirement.
-  ///
-  /// \param Subject The type that must conform to the given layout 
-  /// requirement.
-  /// \param ColonLoc The location of the ':', or an invalid location if
-  /// this requirement was implied.
-  /// \param Layout The layout requirement to which the
-  /// subject must conform.
-  static RequirementRepr getLayoutConstraint(TypeRepr *Subject,
-                                             SourceLoc ColonLoc,
-                                             LayoutConstraintLoc Layout) {
-    return {ColonLoc, RequirementReprKind::LayoutConstraint, Subject,
-            Layout};
-  }
-
-  /// Determine the kind of requirement
-  RequirementReprKind getKind() const { return Kind; }
-
-  /// Determine whether this requirement is invalid.
-  bool isInvalid() const { return Invalid; }
-
-  /// Mark this requirement invalid.
-  void setInvalid() { Invalid = true; }
-
-  /// For a type-bound requirement, return the subject of the
-  /// conformance relationship.
-  TypeRepr *getSubjectRepr() const {
-    assert(getKind() == RequirementReprKind::TypeConstraint ||
-           getKind() == RequirementReprKind::LayoutConstraint);
-    return FirstType;
-  }
-
-  /// For a type-bound requirement, return the protocol or to which
-  /// the subject conforms or superclass it inherits.
-  TypeRepr *getConstraintRepr() const {
-    assert(getKind() == RequirementReprKind::TypeConstraint);
-    return SecondType;
-  }
-
-  LayoutConstraint getLayoutConstraint() const {
-    assert(getKind() == RequirementReprKind::LayoutConstraint);
-    return SecondLayout.getLayoutConstraint();
-  }
-
-  LayoutConstraintLoc &getLayoutConstraintLoc() {
-    assert(getKind() == RequirementReprKind::LayoutConstraint);
-    return SecondLayout;
-  }
-
-  const LayoutConstraintLoc &getLayoutConstraintLoc() const {
-    assert(getKind() == RequirementReprKind::LayoutConstraint);
-    return SecondLayout;
-  }
-
-  /// Retrieve the first type of a same-type requirement.
-  TypeRepr *getFirstTypeRepr() const {
-    assert(getKind() == RequirementReprKind::SameType);
-    return FirstType;
-  }
-
-  /// Retrieve the second type of a same-type requirement.
-  TypeRepr *getSecondTypeRepr() const {
-    assert(getKind() == RequirementReprKind::SameType);
-    return SecondType;
-  }
-
-  /// Retrieve the location of the ':' or '==' in an explicitly-written
-  /// conformance or same-type requirement respectively.
-  SourceLoc getSeparatorLoc() const {
-    return SeparatorLoc;
-  }
-
-  SourceRange getSourceRange() const;
-
-  /// Retrieve the first or subject type representation from the \c repr,
-  /// or \c nullptr if \c repr is null.
-  static TypeRepr *getFirstTypeRepr(const RequirementRepr *repr) {
-    if (!repr) return nullptr;
-    return repr->FirstType;
-  }
-
-  /// Retrieve the second or constraint type representation from the \c repr,
-  /// or \c nullptr if \c repr is null.
-  static TypeRepr *getSecondTypeRepr(const RequirementRepr *repr) {
-    if (!repr) return nullptr;
-    assert(repr->getKind() == RequirementReprKind::TypeConstraint ||
-           repr->getKind() == RequirementReprKind::SameType);
-    return repr->SecondType;
-  }
-
-  SWIFT_DEBUG_DUMP;
-  void print(raw_ostream &OS) const;
-  void print(ASTPrinter &Printer) const;
-};
-
-using GenericParamSource = PointerUnion<GenericContext *, GenericParamList *>;
-
-/// GenericParamList - A list of generic parameters that is part of a generic
-/// function or type, along with extra requirements placed on those generic
-/// parameters and types derived from them.
-class GenericParamList final :
-    private llvm::TrailingObjects<GenericParamList, GenericTypeParamDecl *> {
-  friend TrailingObjects;
-
-  SourceRange Brackets;
-  unsigned NumParams;
-  SourceLoc WhereLoc;
-  MutableArrayRef<RequirementRepr> Requirements;
-
-  GenericParamList *OuterParameters;
-
-  GenericParamList(SourceLoc LAngleLoc,
-                   ArrayRef<GenericTypeParamDecl *> Params,
-                   SourceLoc WhereLoc,
-                   MutableArrayRef<RequirementRepr> Requirements,
-                   SourceLoc RAngleLoc);
-  
-  // Don't copy.
-  GenericParamList(const GenericParamList &) = delete;
-  GenericParamList &operator=(const GenericParamList &) = delete;
-  
-public:
-  /// create - Create a new generic parameter list within the given AST context.
-  ///
-  /// \param Context The ASTContext in which the generic parameter list will
-  /// be allocated.
-  /// \param LAngleLoc The location of the opening angle bracket ('<')
-  /// \param Params The list of generic parameters, which will be copied into
-  /// ASTContext-allocated memory.
-  /// \param RAngleLoc The location of the closing angle bracket ('>')
-  static GenericParamList *create(ASTContext &Context,
-                                  SourceLoc LAngleLoc,
-                                  ArrayRef<GenericTypeParamDecl *> Params,
-                                  SourceLoc RAngleLoc);
-
-  /// create - Create a new generic parameter list and "where" clause within
-  /// the given AST context.
-  ///
-  /// \param Context The ASTContext in which the generic parameter list will
-  /// be allocated.
-  /// \param LAngleLoc The location of the opening angle bracket ('<')
-  /// \param Params The list of generic parameters, which will be copied into
-  /// ASTContext-allocated memory.
-  /// \param WhereLoc The location of the 'where' keyword, if any.
-  /// \param Requirements The list of requirements, which will be copied into
-  /// ASTContext-allocated memory.
-  /// \param RAngleLoc The location of the closing angle bracket ('>')
-  static GenericParamList *create(const ASTContext &Context,
-                                  SourceLoc LAngleLoc,
-                                  ArrayRef<GenericTypeParamDecl *> Params,
-                                  SourceLoc WhereLoc,
-                                  ArrayRef<RequirementRepr> Requirements,
-                                  SourceLoc RAngleLoc);
-
-  MutableArrayRef<GenericTypeParamDecl *> getParams() {
-    return {getTrailingObjects<GenericTypeParamDecl *>(), NumParams};
-  }
-
-  ArrayRef<GenericTypeParamDecl *> getParams() const {
-    return {getTrailingObjects<GenericTypeParamDecl *>(), NumParams};
-  }
-
-  using iterator = GenericTypeParamDecl **;
-  using const_iterator = const GenericTypeParamDecl * const *;
-
-  unsigned size() const { return NumParams; }
-  iterator begin() { return getParams().begin(); }
-  iterator end() { return getParams().end(); }
-  const_iterator begin() const { return getParams().begin(); }
-  const_iterator end() const { return getParams().end(); }
-
-  /// Retrieve the location of the 'where' keyword, or an invalid
-  /// location if 'where' was not present.
-  SourceLoc getWhereLoc() const { return WhereLoc; }
-
-  /// Retrieve the set of additional requirements placed on these
-  /// generic parameters and types derived from them.
-  ///
-  /// This list may contain both explicitly-written requirements as well as
-  /// implicitly-generated requirements, and may be non-empty even if no
-  /// 'where' keyword is present.
-  MutableArrayRef<RequirementRepr> getRequirements() { return Requirements; }
-
-  /// Retrieve the set of additional requirements placed on these
-  /// generic parameters and types derived from them.
-  ///
-  /// This list may contain both explicitly-written requirements as well as
-  /// implicitly-generated requirements, and may be non-empty even if no
-  /// 'where' keyword is present.
-  ArrayRef<RequirementRepr> getRequirements() const { return Requirements; }
-  
-  /// Retrieve the outer generic parameter list.
-  ///
-  /// This is used for extensions of nested types, and in SIL mode, where a
-  /// single lexical context can have multiple logical generic parameter
-  /// lists.
-  GenericParamList *getOuterParameters() const { return OuterParameters; }
-
-  /// Set the outer generic parameter list. See \c getOuterParameters
-  /// for more information.
-  void setOuterParameters(GenericParamList *Outer) { OuterParameters = Outer; }
-
-  void setDeclContext(DeclContext *dc);
-
-  SourceLoc getLAngleLoc() const { return Brackets.Start; }
-  SourceLoc getRAngleLoc() const { return Brackets.End; }
-
-  SourceRange getSourceRange() const { return Brackets; }
-
-  /// Retrieve the source range covering the where clause.
-  SourceRange getWhereClauseSourceRange() const {
-    if (WhereLoc.isInvalid())
-      return SourceRange();
-
-    auto endLoc = Requirements.back().getSourceRange().End;
-    return SourceRange(WhereLoc, endLoc);
-  }
-
-  /// Configure the depth of the generic parameters in this list.
-  void setDepth(unsigned depth);
-
-  /// Create a copy of the generic parameter list and all of its generic
-  /// parameter declarations. The copied generic parameters are re-parented
-  /// to the given DeclContext.
-  GenericParamList *clone(DeclContext *dc) const;
-
-  void print(raw_ostream &OS) const;
-  SWIFT_DEBUG_DUMP;
-};
-  
-/// A trailing where clause.
-class alignas(RequirementRepr) TrailingWhereClause final :
-    private llvm::TrailingObjects<TrailingWhereClause, RequirementRepr> {
-  friend TrailingObjects;
-
-  SourceLoc WhereLoc;
-
-  /// The number of requirements. The actual requirements are tail-allocated.
-  unsigned NumRequirements;
-
-  TrailingWhereClause(SourceLoc whereLoc,
-                      ArrayRef<RequirementRepr> requirements);
-
-public:
-  /// Create a new trailing where clause with the given set of requirements.
-  static TrailingWhereClause *create(ASTContext &ctx, SourceLoc whereLoc,
-                                     ArrayRef<RequirementRepr> requirements);
-
-  /// Retrieve the location of the 'where' keyword.
-  SourceLoc getWhereLoc() const { return WhereLoc; }
-
-  /// Retrieve the set of requirements.
-  MutableArrayRef<RequirementRepr> getRequirements() {
-    return {getTrailingObjects<RequirementRepr>(), NumRequirements};
-  }
-
-  /// Retrieve the set of requirements.
-  ArrayRef<RequirementRepr> getRequirements() const {
-    return {getTrailingObjects<RequirementRepr>(), NumRequirements};
-  }
-
-  /// Compute the source range containing this trailing where clause.
-  SourceRange getSourceRange() const {
-    return SourceRange(WhereLoc,
-                       getRequirements().back().getSourceRange().End);
-  }
-
-  void print(llvm::raw_ostream &OS, bool printWhereKeyword) const;
-};
 
 // A private class for forcing exact field layout.
 class alignas(8) _GenericContext {
@@ -1453,32 +1093,14 @@ public:
 static_assert(sizeof(_GenericContext) + sizeof(DeclContext) ==
               sizeof(GenericContext), "Please add fields to _GenericContext");
 
-/// Describes what kind of name is being imported.
-///
-/// If the enumerators here are changed, make sure to update all diagnostics
-/// using ImportKind as a select index.
-enum class ImportKind : uint8_t {
-  Module = 0,
-  Type,
-  Struct,
-  Class,
-  Enum,
-  Protocol,
-  Var,
-  Func
-};
-
 /// ImportDecl - This represents a single import declaration, e.g.:
 ///   import Swift
 ///   import typealias Swift.Int
 class ImportDecl final : public Decl,
-    private llvm::TrailingObjects<ImportDecl, Located<Identifier>> {
+    private llvm::TrailingObjects<ImportDecl, ImportPath::Element> {
   friend TrailingObjects;
   friend class Decl;
-public:
-  typedef Located<Identifier> AccessPathElement;
 
-private:
   SourceLoc ImportLoc;
   SourceLoc KindLoc;
 
@@ -1486,13 +1108,13 @@ private:
   ModuleDecl *Mod = nullptr;
 
   ImportDecl(DeclContext *DC, SourceLoc ImportLoc, ImportKind K,
-             SourceLoc KindLoc, ArrayRef<AccessPathElement> Path);
+             SourceLoc KindLoc, ImportPath Path);
 
 public:
   static ImportDecl *create(ASTContext &C, DeclContext *DC,
                             SourceLoc ImportLoc, ImportKind Kind,
                             SourceLoc KindLoc,
-                            ArrayRef<AccessPathElement> Path,
+                            ImportPath Path,
                             ClangNode ClangN = ClangNode());
 
   /// Returns the import kind that is most appropriate for \p VD.
@@ -1507,26 +1129,21 @@ public:
   /// cannot be overloaded, returns None.
   static Optional<ImportKind> findBestImportKind(ArrayRef<ValueDecl *> Decls);
 
-  ArrayRef<AccessPathElement> getFullAccessPath() const {
-    return {getTrailingObjects<AccessPathElement>(),
-            static_cast<size_t>(Bits.ImportDecl.NumPathElements)};
-  }
-
-  ArrayRef<AccessPathElement> getModulePath() const {
-    auto result = getFullAccessPath();
-    if (getImportKind() != ImportKind::Module)
-      result = result.slice(0, result.size()-1);
-    return result;
-  }
-
-  ArrayRef<AccessPathElement> getDeclPath() const {
-    if (getImportKind() == ImportKind::Module)
-      return {};
-    return getFullAccessPath().back();
-  }
-
   ImportKind getImportKind() const {
     return static_cast<ImportKind>(Bits.ImportDecl.ImportKind);
+  }
+
+  ImportPath getImportPath() const {
+    return ImportPath({ getTrailingObjects<ImportPath::Element>(),
+                        static_cast<size_t>(Bits.ImportDecl.NumPathElements) });
+  }
+
+  ImportPath::Module getModulePath() const {
+    return getImportPath().getModulePath(getImportKind());
+  }
+
+  ImportPath::Access getAccessPath() const {
+    return getImportPath().getAccessPath(getImportKind());
   }
 
   bool isExported() const {
@@ -1545,9 +1162,11 @@ public:
   }
 
   SourceLoc getStartLoc() const { return ImportLoc; }
-  SourceLoc getLocFromSource() const { return getFullAccessPath().front().Loc; }
+  SourceLoc getLocFromSource() const {
+    return getImportPath().getSourceRange().Start;
+  }
   SourceRange getSourceRange() const {
-    return SourceRange(ImportLoc, getFullAccessPath().back().Loc);
+    return SourceRange(ImportLoc, getImportPath().getSourceRange().End);
   }
   SourceLoc getKindLoc() const { return KindLoc; }
 
@@ -1965,8 +1584,6 @@ private:
 
   CaptureInfo getCaptureInfo() const { return Captures; }
   void setCaptureInfo(CaptureInfo captures) { Captures = captures; }
-
-  unsigned getNumBoundVariables() const;
 
 private:
   SourceLoc getLastAccessorEndLoc() const;
@@ -3944,9 +3561,6 @@ public:
   /// Set the superclass of this class.
   void setSuperclass(Type superclass);
 
-  /// Whether this class has a circular reference in its inheritance hierarchy.
-  bool hasCircularInheritance() const;
-
   /// Walk this class and all of the superclasses of this class, transitively,
   /// invoking the callback function for each class.
   ///
@@ -4002,6 +3616,9 @@ public:
   bool isForeign() const {
     return getForeignClassKind() != ForeignKind::Normal;
   }
+
+  /// Whether the class is an actor.
+  bool isActor() const;
 
   /// Returns true if the class has designated initializers that are not listed
   /// in its members.
@@ -4138,12 +3755,14 @@ struct SelfReferenceKind {
     return SelfReferenceKind(false, false, false, false);
   }
 
-  /// The type refers to 'Self', but only as the result type of a method.
+  /// The type refers to 'Self', but only as the type of a property or
+  /// the result type of a method/subscript.
   static SelfReferenceKind Result() {
     return SelfReferenceKind(true, false, false, false);
   }
 
-  /// The type refers to 'Self', but only as the parameter type of a method.
+  /// The type refers to 'Self', but only as the parameter type
+  /// of a method/subscript.
   static SelfReferenceKind Parameter() {
     return SelfReferenceKind(false, true, false, false);
   }
@@ -4194,6 +3813,7 @@ enum class KnownDerivableProtocolKind : uint8_t {
   Decodable,
   AdditiveArithmetic,
   Differentiable,
+  Actor,
 };
 
 /// ProtocolDecl - A declaration of a protocol, for example:
@@ -4900,16 +4520,19 @@ public:
   };
 
 protected:
-  PointerUnion<PatternBindingDecl *, Stmt *, VarDecl *> Parent;
+  PointerUnion<PatternBindingDecl *,
+               Stmt *,
+               VarDecl *,
+               CaptureListExpr *> Parent;
 
   VarDecl(DeclKind kind, bool isStatic, Introducer introducer,
-          bool isCaptureList, SourceLoc nameLoc, Identifier name,
-          DeclContext *dc, StorageIsMutable_t supportsMutation);
+          SourceLoc nameLoc, Identifier name, DeclContext *dc,
+          StorageIsMutable_t supportsMutation);
 
 public:
-  VarDecl(bool isStatic, Introducer introducer, bool isCaptureList,
+  VarDecl(bool isStatic, Introducer introducer,
           SourceLoc nameLoc, Identifier name, DeclContext *dc)
-    : VarDecl(DeclKind::Var, isStatic, introducer, isCaptureList, nameLoc,
+    : VarDecl(DeclKind::Var, isStatic, introducer, nameLoc,
               name, dc, StorageIsMutable_t(introducer == Introducer::Var)) {}
 
   SourceRange getSourceRange() const;
@@ -5099,23 +4722,27 @@ public:
     Bits.VarDecl.Introducer = uint8_t(value);
   }
 
+  CaptureListExpr *getParentCaptureList() const {
+    if (!Parent)
+      return nullptr;
+    return Parent.dyn_cast<CaptureListExpr *>();
+  }
+
+  /// Set \p v to be the pattern produced VarDecl that is the parent of this
+  /// var decl.
+  void setParentCaptureList(CaptureListExpr *expr) {
+    assert(expr != nullptr);
+    Parent = expr;
+  }
   /// Is this an element in a capture list?
-  bool isCaptureList() const { return Bits.VarDecl.IsCaptureList; }
+  bool isCaptureList() const {
+    return getParentCaptureList() != nullptr;
+  }
     
   /// Is this a capture of the self param?
   bool isSelfParamCapture() const { return Bits.VarDecl.IsSelfParamCapture; }
   void setIsSelfParamCapture(bool IsSelfParamCapture = true) {
       Bits.VarDecl.IsSelfParamCapture = IsSelfParamCapture;
-  }
-
-  /// Return true if this vardecl has an initial value bound to it in a way
-  /// that isn't represented in the AST with an initializer in the pattern
-  /// binding.  This happens in cases like "for i in ...", switch cases, etc.
-  bool hasNonPatternBindingInit() const {
-    return Bits.VarDecl.HasNonPatternBindingInit;
-  }
-  void setHasNonPatternBindingInit(bool V = true) {
-    Bits.VarDecl.HasNonPatternBindingInit = V;
   }
 
   /// Determines if this var has an initializer expression that should be
@@ -5211,6 +4838,14 @@ public:
   /// Retreive the projection var for a property that has an attached
   /// property wrapper with a \c projectedValue .
   VarDecl *getPropertyWrapperProjectionVar() const;
+
+  /// Visit all auxiliary declarations to this VarDecl.
+  ///
+  /// An auxiliary declaration is a declaration synthesized by the compiler to support
+  /// this VarDecl, such as synthesized property wrapper variables.
+  ///
+  /// \note this function only visits auxiliary decls that are not part of the AST.
+  void visitAuxiliaryDecls(llvm::function_ref<void(VarDecl *)>) const;
 
   /// Retrieve the backing storage property for a lazy property.
   VarDecl *getLazyStorageProperty() const;
@@ -5852,6 +5487,7 @@ protected:
   };
 
   friend class ParseAbstractFunctionBodyRequest;
+  friend class TypeCheckFunctionBodyRequest;
 
   CaptureInfo Captures;
 
@@ -5957,6 +5593,10 @@ public:
   /// Returns true if the function is an @asyncHandler.
   bool isAsyncHandler() const;
 
+  /// Returns true if the function signature matches the form of an
+  /// @asyncHandler.
+  bool canBeAsyncHandler() const;
+
   /// Returns true if the function body throws.
   bool hasThrows() const { return Bits.AbstractFunctionDecl.Throws; }
 
@@ -5985,7 +5625,12 @@ public:
   /// \sa hasBody()
   BraceStmt *getBody(bool canSynthesize = true) const;
 
-  void setBody(BraceStmt *S, BodyKind NewBodyKind = BodyKind::Parsed);
+  /// Retrieve the type-checked body of the given function, or \c nullptr if
+  /// there's no body available.
+  BraceStmt *getTypecheckedBody() const;
+
+  /// Set a new body for the function.
+  void setBody(BraceStmt *S, BodyKind NewBodyKind);
 
   /// Note that the body was skipped for this function.  Function body
   /// cannot be attached after this call.
@@ -6329,6 +5974,14 @@ public:
   bool isCallAsFunctionMethod() const;
 
   bool isMainTypeMainMethod() const;
+
+  /// Whether the given name is enqueue(partialTask:), which is used for
+  /// actors.
+  static bool isEnqueuePartialTaskName(ASTContext &ctx, DeclName name);
+
+  /// Determine whether this function is the witness to the Actor protocol's
+  /// enqueue(partialTask:) operation within an actor.
+  bool isActorEnqueuePartialTaskWitness() const;
 
   SelfAccessKind getSelfAccessKind() const;
 
@@ -6765,6 +6418,37 @@ enum class CtorInitializerKind {
   Factory
 };
 
+/// Specifies the kind of initialization call performed within the body
+/// of the constructor, e.g., self.init or super.init.
+enum class BodyInitKind {
+  /// There are no calls to self.init or super.init.
+  None,
+  /// There is a call to self.init, which delegates to another (peer)
+  /// initializer.
+  Delegating,
+  /// There is a call to super.init, which chains to a superclass initializer.
+  Chained,
+  /// There are no calls to self.init or super.init explicitly in the body of
+  /// the constructor, but a 'super.init' call will be implicitly added
+  /// by semantic analysis.
+  ImplicitChained
+};
+
+struct BodyInitKindAndExpr {
+  BodyInitKind initKind;
+  ApplyExpr *initExpr;
+
+  BodyInitKindAndExpr() : initKind(BodyInitKind::None), initExpr(nullptr) {}
+
+  BodyInitKindAndExpr(BodyInitKind initKind, ApplyExpr *initExpr)
+      : initKind(initKind), initExpr(initExpr) {}
+
+  friend bool operator==(BodyInitKindAndExpr lhs, BodyInitKindAndExpr rhs) {
+    return (lhs.initKind == rhs.initKind &&
+            lhs.initExpr == rhs.initExpr);
+  }
+};
+
 /// ConstructorDecl - Declares a constructor for a type.  For example:
 ///
 /// \code
@@ -6813,38 +6497,11 @@ public:
 
   ParamDecl **getImplicitSelfDeclStorage() { return &SelfDecl; }
 
-  /// Specifies the kind of initialization call performed within the body
-  /// of the constructor, e.g., self.init or super.init.
-  enum class BodyInitKind {
-    /// There are no calls to self.init or super.init.
-    None,
-    /// There is a call to self.init, which delegates to another (peer)
-    /// initializer.
-    Delegating,
-    /// There is a call to super.init, which chains to a superclass initializer.
-    Chained,
-    /// There are no calls to self.init or super.init explicitly in the body of
-    /// the constructor, but a 'super.init' call will be implicitly added
-    /// by semantic analysis.
-    ImplicitChained
-  };
-
   /// Determine whether the body of this constructor contains any delegating
   /// or superclass initializations (\c self.init or \c super.init,
   /// respectively) within its body.
-  ///
-  /// \param diags If non-null, this check will ensure that the constructor
-  /// body is consistent in its use of delegation vs. chaining and emit any
-  /// diagnostics through the given diagnostic engine.
-  ///
-  /// \param init If non-null and there is an explicit \c self.init or
-  /// \c super.init within the body, will be set to point at that
-  /// initializer.
-  BodyInitKind getDelegatingOrChainedInitKind(DiagnosticEngine *diags,
-                                              ApplyExpr **init = nullptr) const;
-  void clearCachedDelegatingOrChainedInitKind() {
-    Bits.ConstructorDecl.ComputedBodyInitKind = 0;
-  }
+  BodyInitKindAndExpr getDelegatingOrChainedInitKind() const;
+  void clearCachedDelegatingOrChainedInitKind();
 
   /// Whether this constructor is required.
   bool isRequired() const {

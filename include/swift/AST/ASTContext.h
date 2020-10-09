@@ -20,6 +20,7 @@
 #include "swift/AST/Evaluator.h"
 #include "swift/AST/GenericSignature.h"
 #include "swift/AST/Identifier.h"
+#include "swift/AST/Import.h"
 #include "swift/AST/SearchPathOptions.h"
 #include "swift/AST/Type.h"
 #include "swift/AST/Types.h"
@@ -122,6 +123,7 @@ namespace swift {
   class IndexSubset;
   struct SILAutoDiffDerivativeFunctionKey;
   struct InterfaceSubContextDelegate;
+  class TypeCheckCompletionCallback;
 
   enum class KnownProtocolKind : uint8_t;
 
@@ -197,6 +199,16 @@ public:
 
 class SILLayout; // From SIL
 
+/// A set of missing witnesses for a given conformance. These are temporarily
+/// stashed in the ASTContext so the type checker can get at them.
+///
+/// The only subclass is owned by the type checker, so it can hide its own
+/// data structures.
+class MissingWitnessesBase {
+public:
+  virtual ~MissingWitnessesBase();
+};
+
 /// ASTContext - This object creates and owns the AST objects.
 /// However, this class does more than just maintain context within an AST.
 /// It is the closest thing to thread-local or compile-local storage in this
@@ -257,6 +269,8 @@ public:
 
   /// Diags - The diagnostics engine.
   DiagnosticEngine &Diags;
+
+  TypeCheckCompletionCallback *CompletionCallback = nullptr;
 
   /// The request-evaluator that is used to process various requests.
   Evaluator evaluator;
@@ -485,13 +499,13 @@ public:
   /// Retrieve the type Swift.Never.
   CanType getNeverType() const;
 
-#define KNOWN_OBJC_TYPE_DECL(MODULE, NAME, DECL_CLASS) \
+#define KNOWN_SDK_TYPE_DECL(MODULE, NAME, DECL_CLASS, NUM_GENERIC_PARAMS) \
   /** Retrieve the declaration of MODULE.NAME. */ \
   DECL_CLASS *get##NAME##Decl() const; \
 \
   /** Retrieve the type of MODULE.NAME. */ \
   Type get##NAME##Type() const;
-#include "swift/AST/KnownObjCTypes.def"
+#include "swift/AST/KnownSDKTypes.def"
 
   // Declare accessors for the known declarations.
 #define FUNC_DECL(Name, Id) \
@@ -680,6 +694,9 @@ public:
   /// generic metadata.
   AvailabilityContext getIntermodulePrespecializedGenericMetadataAvailability();
 
+  /// Get the runtime availability of support for concurrency.
+  AvailabilityContext getConcurrencyAvailability();
+
   /// Get the runtime availability of features introduced in the Swift 5.2
   /// compiler for the target platform.
   AvailabilityContext getSwift52Availability();
@@ -747,6 +764,12 @@ public:
   void addModuleLoader(std::unique_ptr<ModuleLoader> loader,
                        bool isClang = false, bool isDWARF = false,
                        bool IsInterface = false);
+
+  /// Add a module interface checker to use for this AST context.
+  void addModuleInterfaceChecker(std::unique_ptr<ModuleInterfaceChecker> checker);
+
+  /// Retrieve the module interface checker associated with this AST context.
+  ModuleInterfaceChecker *getModuleInterfaceChecker() const;
 
   /// Retrieve the module dependencies for the module with the given name.
   ///
@@ -825,9 +848,6 @@ public:
   /// If there is no Clang module loader, returns a null pointer.
   /// The loader is owned by the AST context.
   ClangModuleLoader *getDWARFModuleLoader() const;
-
-  /// Retrieve the module interface loader for this ASTContext.
-  ModuleLoader *getModuleInterfaceLoader() const;
 public:
   namelookup::ImportCache &getImportCache() const;
 
@@ -856,12 +876,12 @@ public:
   ///
   /// Note that even if this check succeeds, errors may still occur if the
   /// module is loaded in full.
-  bool canImportModule(Located<Identifier> ModulePath);
+  bool canImportModule(ImportPath::Element ModulePath);
 
   /// \returns a module with a given name that was already loaded.  If the
   /// module was not loaded, returns nullptr.
   ModuleDecl *getLoadedModule(
-      ArrayRef<Located<Identifier>> ModulePath) const;
+      ImportPath::Module ModulePath) const;
 
   ModuleDecl *getLoadedModule(Identifier ModuleName) const;
 
@@ -871,9 +891,11 @@ public:
   /// be returned.
   ///
   /// \returns The requested module, or NULL if the module cannot be found.
-  ModuleDecl *getModule(ArrayRef<Located<Identifier>> ModulePath);
+  ModuleDecl *getModule(ImportPath::Module ModulePath);
 
   ModuleDecl *getModuleByName(StringRef ModuleName);
+
+  ModuleDecl *getModuleByIdentifier(Identifier ModuleID);
 
   /// Returns the standard library module, or null if the library isn't present.
   ///
@@ -943,12 +965,13 @@ public:
   takeDelayedConformanceDiags(NormalProtocolConformance *conformance);
 
   /// Add delayed missing witnesses for the given normal protocol conformance.
-  void addDelayedMissingWitnesses(NormalProtocolConformance *conformance,
-                                  ArrayRef<ValueDecl*> witnesses);
+  void addDelayedMissingWitnesses(
+      NormalProtocolConformance *conformance,
+      std::unique_ptr<MissingWitnessesBase> missingWitnesses);
 
   /// Retrieve the delayed missing witnesses for the given normal protocol
   /// conformance.
-  std::vector<ValueDecl*>
+  std::unique_ptr<MissingWitnessesBase>
   takeDelayedMissingWitnesses(NormalProtocolConformance *conformance);
 
   /// Produce a specialized conformance, which takes a generic
@@ -1048,9 +1071,8 @@ public:
   CanGenericSignature getSingleGenericParameterSignature() const;
 
   /// Retrieve a generic signature with a single type parameter conforming
-  /// to the given opened archetype.
-  CanGenericSignature getOpenedArchetypeSignature(CanType existential,
-                                                  ModuleDecl *mod);
+  /// to the given protocol or composition type, like <T: type>.
+  CanGenericSignature getOpenedArchetypeSignature(Type type);
 
   GenericSignature getOverrideGenericSignature(const ValueDecl *base,
                                                const ValueDecl *derived);
