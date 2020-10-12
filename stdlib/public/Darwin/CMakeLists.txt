@@ -15,17 +15,12 @@ endif()
 
 set(all_overlays
   CoreFoundation
+  Foundation
   CoreGraphics
   Dispatch
   ObjectiveC
   XCTest
 )
-
-if(NOT SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
-  list(APPEND all_overlays
-    Foundation
-  )
-endif()
 
 if(DEFINED SWIFT_OVERLAY_TARGETS)
   set(overlays_to_build ${SWIFT_OVERLAY_TARGETS})
@@ -106,14 +101,18 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
   if(${build_type} STREQUAL "xcode")
     # Second idea: Xcode project
     # FIXME: set correct oputput folder
+    if("CoreFoundation" IN_LIST overlays_to_build)
     addOverlayXcodeProject(CoreFoundation)
 
     # Experiment to see if we can avoid touching existing overlays
     addOverlayTargets(CoreFoundation)
+endif()
 
+    if("Foundation" IN_LIST overlays_to_build)
     # Experiment to see if we can avoid touching existing overlays
     addOverlayXcodeProject(Foundation DEPENDS CoreFoundationOverlay)
     addOverlayTargets(Foundation)
+endif()
   else()
 
   # First idea: CMake project
@@ -137,5 +136,5 @@ endif()
 message(STATUS "Building overlays: ${overlays_to_build}")
 foreach(overlay ${overlays_to_build})
   message(STATUS "INCLUDING OVERLAY: ${overlay}")
-  add_subdirectory(${overlay})
-endforeach()
+      add_subdirectory(${overlay})
+    endforeach()

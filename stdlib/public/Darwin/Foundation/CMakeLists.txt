@@ -1,6 +1,19 @@
 cmake_minimum_required(VERSION 3.4.3)
 include("../../../../cmake/modules/StandaloneOverlay.cmake")
 
+set(FOUNDATION_TARGET_SDKS "")
+
+if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
+    set(FOUNDATION_TARGET_SDKS ${SWIFT_SDKS})
+    variable_watch(FOUNDATION_TARGET_SDKS)
+    list(REMOVE_ITEM FOUNDATION_TARGET_SDKS "OSX")
+
+    if(NOT FOUNDATION_TARGET_SDKS)
+        message("All the Foundation targets are handled by the new logic, skipping legacy logic")
+        return()
+    endif()
+endif()
+
 add_swift_target_library(swiftFoundation ${SWIFT_SDK_OVERLAY_LIBRARY_BUILD_TYPES} IS_SDK_OVERLAY
   AffineTransform.swift
   Boxing.swift
@@ -98,5 +111,6 @@ add_swift_target_library(swiftFoundation ${SWIFT_SDK_OVERLAY_LIBRARY_BUILD_TYPES
   DEPLOYMENT_VERSION_IOS ${SWIFTLIB_DEPLOYMENT_VERSION_FOUNDATION_IOS}
   DEPLOYMENT_VERSION_TVOS ${SWIFTLIB_DEPLOYMENT_VERSION_FOUNDATION_TVOS}
   DEPLOYMENT_VERSION_WATCHOS ${SWIFTLIB_DEPLOYMENT_VERSION_FOUNDATION_WATCHOS}
+  TARGET_SDKS ${FOUNDATION_TARGET_SDKS}
   INSTALL_IN_COMPONENT sdk-overlay
 )
