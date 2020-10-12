@@ -15,9 +15,9 @@ endif()
 
 set(all_overlays
   CoreFoundation
-  Foundation
   CoreGraphics
   Dispatch
+  Foundation
   ObjectiveC
   XCTest
 )
@@ -142,5 +142,5 @@ endif()
 message(STATUS "Building overlays: ${overlays_to_build}")
 foreach(overlay ${overlays_to_build})
   message(STATUS "INCLUDING OVERLAY: ${overlay}")
-      add_subdirectory(${overlay})
-    endforeach()
+  add_subdirectory(${overlay})
+endforeach()
