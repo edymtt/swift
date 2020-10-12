@@ -31,12 +31,12 @@ endif()
 function(addOverlayXcodeProject overlay)
     set(options)
     set(oneValueArgs)
-    set(multiValueArgs DEPENDS)
+    set(multiValueArgs "DEPENDS" "TARGET_SDKS")
 
     cmake_parse_arguments(AOXP "${options}" "${oneValueArgs}"
                                   "${multiValueArgs}" ${ARGN} )
 
-    foreach(sdk ${SWIFT_SDKS})
+    foreach(sdk ${AOXP_TARGET_SDKS})
         set(sdk_name ${SWIFT_SDK_${sdk}_LIB_SUBDIR})
 
 
@@ -62,8 +62,14 @@ function(addOverlayXcodeProject overlay)
 endfunction()
 
 function(addOverlayTargets overlay)
+    set(options)
+    set(oneValueArgs)
+    set(multiValueArgs "TARGET_SDKS")
+
+    cmake_parse_arguments(AOT "${options}" "${oneValueArgs}"
+                                  "${multiValueArgs}" ${ARGN} )
     message("Targeted sdks")
-    foreach(sdk ${SWIFT_SDKS})
+    foreach(sdk ${AOT_TARGET_SDKS})
         message(${sdk})
         message("Supported archs")
         foreach(arch ${SWIFT_SDK_${sdk}_ARCHITECTURES})
@@ -92,26 +98,26 @@ endfunction()
 
 message(STATUS "Experimental build for foundation overlay: ${SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD}")
 if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
-  #add CoreFoundation in a different way
   include(ExternalProject)
 
+  list(APPEND EXPERIMENTAL_FOUNDATION_SUPPORTED_SDKS "OSX")
+
   set(build_type "xcode")
-
-
   if(${build_type} STREQUAL "xcode")
+
     # Second idea: Xcode project
     # FIXME: set correct oputput folder
     if("CoreFoundation" IN_LIST overlays_to_build)
-    addOverlayXcodeProject(CoreFoundation)
+        addOverlayXcodeProject(CoreFoundation TARGET_SDKS ${EXPERIMENTAL_FOUNDATION_SUPPORTED_SDKS})
 
     # Experiment to see if we can avoid touching existing overlays
-    addOverlayTargets(CoreFoundation)
+    addOverlayTargets(CoreFoundation TARGET_SDKS ${EXPERIMENTAL_FOUNDATION_SUPPORTED_SDKS})
 endif()
 
     if("Foundation" IN_LIST overlays_to_build)
     # Experiment to see if we can avoid touching existing overlays
-    addOverlayXcodeProject(Foundation DEPENDS CoreFoundationOverlay)
-    addOverlayTargets(Foundation)
+    addOverlayXcodeProject(Foundation DEPENDS CoreFoundationOverlay TARGET_SDKS ${EXPERIMENTAL_FOUNDATION_SUPPORTED_SDKS})
+    addOverlayTargets(Foundation TARGET_SDKS ${EXPERIMENTAL_FOUNDATION_SUPPORTED_SDKS})
 endif()
   else()
 
