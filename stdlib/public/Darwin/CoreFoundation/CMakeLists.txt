@@ -1,34 +1,19 @@
-set(COREFOUNDATION_OVERLAY_BUILT_STANDALONE FALSE)
-if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
-    set(COREFOUNDATION_OVERLAY_BUILT_STANDALONE TRUE)
-endif()
-
-if(COREFOUNDATION_OVERLAY_BUILT_STANDALONE OR SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
-    # CMake 3.15.1 fails when testing the Swift compiler during configuration
-    cmake_minimum_required(VERSION 3.16.5)
-    project(CoreFoundationOverlay LANGUAGES C Swift) 
-
-    option(BUILD_SHARED_LIBS "Build shared libraries by default" YES)
-    add_library(swiftCoreFoundation
-        CoreFoundation.swift)
-    target_compile_options(swiftCoreFoundation
-        PRIVATE -module-name CoreFoundation)
-    
-    target_link_options(swiftCoreFoundation
-        PRIVATE -framework CoreFoundation)
-
-    # FIXME: proper generatio of magic symbols
-    add_library(magic-symbols-for-install-name STATIC
-        "${CMAKE_SOURCE_DIR}/../../../linker-support/magic-symbols-for-install-name.c")
-    target_compile_options(magic-symbols-for-install-name
-        PRIVATE "-DSWIFT_TARGET_LIBRARY_NAME=swiftCoreFoundation")
-    target_link_libraries(swiftCoreFoundation PRIVATE magic-symbols-for-install-name)
-
-    install(TARGETS swiftCoreFoundation DESTINATION usr/lib/swift)
-else()
-
 cmake_minimum_required(VERSION 3.4.3)
 include("../../../../cmake/modules/StandaloneOverlay.cmake")
+
+set(CORE_FOUNDATION_TARGET_SDKS "")
+
+if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
+    set(CORE_FOUNDATION_TARGET_SDKS ${SWIFT_SDKS})
+    variable_watch(CORE_FOUNDATION_TARGET_SDKS)
+    list(REMOVE_ITEM CORE_FOUNDATION_TARGET_SDKS "OSX")
+
+    if(NOT CORE_FOUNDATION_TARGET_SDKS)
+        message("All the CoreFoundation targets are handled by the new logic, skipping legacy logic")
+        return()
+    endif()
+endif()
+
 
 add_swift_target_library(swiftCoreFoundation ${SWIFT_SDK_OVERLAY_LIBRARY_BUILD_TYPES} IS_SDK_OVERLAY
   CoreFoundation.swift
@@ -41,7 +26,7 @@ add_swift_target_library(swiftCoreFoundation ${SWIFT_SDK_OVERLAY_LIBRARY_BUILD_T
   SWIFT_MODULE_DEPENDS_IOS Darwin Dispatch ObjectiveC # auto-updated
   SWIFT_MODULE_DEPENDS_TVOS Darwin Dispatch ObjectiveC # auto-updated
   SWIFT_MODULE_DEPENDS_WATCHOS Darwin Dispatch ObjectiveC # auto-updated
+  TARGET_SDKS ${CORE_FOUNDATION_TARGET_SDKS}
   FRAMEWORK_DEPENDS CoreFoundation
   INSTALL_IN_COMPONENT sdk-overlay
 )
-endif()

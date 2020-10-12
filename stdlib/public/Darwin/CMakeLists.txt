@@ -14,6 +14,7 @@ if(SWIFT_BUILD_STATIC_SDK_OVERLAY)
 endif()
 
 set(all_overlays
+  CoreFoundation
   CoreGraphics
   Dispatch
   ObjectiveC
@@ -22,7 +23,6 @@ set(all_overlays
 
 if(NOT SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
   list(APPEND all_overlays
-    CoreFoundation
     Foundation
   )
 endif()
