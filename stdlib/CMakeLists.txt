@@ -70,6 +70,10 @@ option(SWIFT_COMPILE_DIFFERENTIATION_WITHOUT_TGMATH
        "Build Differentation without tgmath (and dependency on platform runtime libraries)"
        FALSE)
 
+option(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD
+    "Enable experimental build of CoreFoundation/Foundation overlay as if they were not part of the Swift repo"
+    OFF)
+
 #
 # End of user-configurable options.
 #

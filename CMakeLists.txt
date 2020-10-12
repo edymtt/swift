@@ -403,9 +403,6 @@ option(SWIFT_ENABLE_EXPERIMENTAL_CONCURRENCY
   "Enable experimental Swift concurrency model"
   FALSE)
 
-option(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD
-    "Enable experimental build of CoreFoundation/Foundation overlay as if they were not part of the Swift repo"
-    OFF)
 #
 # End of user-configurable options.
 #
