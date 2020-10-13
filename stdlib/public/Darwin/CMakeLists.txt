@@ -29,7 +29,7 @@ else()
 endif()
 
 function(addOverlayXcodeProject overlay)
-    set(options)
+  set(options)
     set(oneValueArgs)
     set(multiValueArgs "DEPENDS" "TARGET_SDKS")
 
@@ -60,6 +60,8 @@ function(addOverlayXcodeProject overlay)
   add_dependencies(sdk-overlay ${overlay}Overlay-${sdk_name})
     endforeach()
 endfunction()
+
+
 
 function(addOverlayTargets overlay)
     set(options)
@@ -102,43 +104,17 @@ if(SWIFT_ENABLE_EXPERIMENTAL_FOUNDATION_OVERLAY_POST_SPLIT_BUILD)
 
   list(APPEND EXPERIMENTAL_FOUNDATION_SUPPORTED_SDKS "OSX")
 
-  set(build_type "xcode")
-  if(${build_type} STREQUAL "xcode")
-
-    # Second idea: Xcode project
-    # FIXME: set correct oputput folder
-    if("CoreFoundation" IN_LIST overlays_to_build)
-        addOverlayXcodeProject(CoreFoundation TARGET_SDKS ${EXPERIMENTAL_FOUNDATION_SUPPORTED_SDKS})
-
-    # Experiment to see if we can avoid touching existing overlays
+  if("CoreFoundation" IN_LIST overlays_to_build)
+    addOverlayXcodeProject(CoreFoundation TARGET_SDKS ${EXPERIMENTAL_FOUNDATION_SUPPORTED_SDKS})
     addOverlayTargets(CoreFoundation TARGET_SDKS ${EXPERIMENTAL_FOUNDATION_SUPPORTED_SDKS})
-endif()
+  endif()
 
-    if("Foundation" IN_LIST overlays_to_build)
-    # Experiment to see if we can avoid touching existing overlays
+  if("Foundation" IN_LIST overlays_to_build)
     addOverlayXcodeProject(Foundation DEPENDS CoreFoundationOverlay TARGET_SDKS ${EXPERIMENTAL_FOUNDATION_SUPPORTED_SDKS})
     addOverlayTargets(Foundation TARGET_SDKS ${EXPERIMENTAL_FOUNDATION_SUPPORTED_SDKS})
+  endif()
 endif()
-  else()
 
-  # First idea: CMake project
-  #FIXME likely try with newer CMake
-  #FIXME match flags
-  ExternalProject_Add(CoreFoundationOverlay
-      SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CoreFoundation"
-      INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:STRING=<INSTALL_DIR>
--DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
-                          -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
-                          -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-                          -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
-                          -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
-                          -DCMAKE_Swift_COMPILER="${SWIFT_NATIVE_SWIFT_TOOLS_PATH}/swiftc"
-                          )
-                  endif()
-
-
-endif()
 message(STATUS "Building overlays: ${overlays_to_build}")
 foreach(overlay ${overlays_to_build})
   message(STATUS "INCLUDING OVERLAY: ${overlay}")
