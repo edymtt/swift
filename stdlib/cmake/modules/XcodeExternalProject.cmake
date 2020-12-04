@@ -30,15 +30,18 @@ function(addOverlayXcodeProject overlay)
       SOURCE_DIR ${AOXP_SOURCE_DIR}
       INSTALL_DIR  ${SWIFTLIB_DIR}/${sdk_name}
       CONFIGURE_COMMAND ""
-      BUILD_ALWAYS 1
+      BUILD_ALWAYS 1 # because code is updated by update-checkout
+      BUILD_IN_SOURCE TRUE
       BUILD_COMMAND xcodebuild install -target ${AOXP_BUILD_TARGET} -sdk ${sdk_path}
       SYMROOT=<TMP_DIR> OBJROOT=<TMP_DIR>
       DSTROOT=<TMP_DIR>
       SWIFT_EXEC=${SWIFT_NATIVE_SWIFT_TOOLS_PATH}/swiftc
       MACOSX_DEPLOYMENT_TARGET=${SWIFT_DARWIN_DEPLOYMENT_VERSION_OSX} IPHONEOS_DEPLOYMENT_TARGET=${SWIFT_DARWIN_DEPLOYMENT_VERSION_IOS}
       ${AOXP_ADDITIONAL_BUILD_ARGUMENTS}
-      BUILD_IN_SOURCE TRUE
-      INSTALL_COMMAND ditto <TMP_DIR>/${temp_install_subpath} <INSTALL_DIR>
+      # This should have been the install command, but need to fold into the build one
+      # to be sure the dependencies works
+      COMMAND ditto <TMP_DIR>/${temp_install_subpath} <INSTALL_DIR>
+      INSTALL_COMMAND ""
       BUILD_BYPRODUCTS <INSTALL_DIR>/${overlay}.swiftmodule
       <INSTALL_DIR>/libswift${overlay}.dylib
       EXCLUDE_FROM_ALL TRUE
