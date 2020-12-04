@@ -30,6 +30,7 @@ function(addOverlayXcodeProject overlay)
       SOURCE_DIR ${AOXP_SOURCE_DIR}
       INSTALL_DIR  ${SWIFTLIB_DIR}/${sdk_name}
       CONFIGURE_COMMAND ""
+      BUILD_ALWAYS 1
       BUILD_COMMAND xcodebuild install -target ${AOXP_BUILD_TARGET} -sdk ${sdk_path}
       SYMROOT=<TMP_DIR> OBJROOT=<TMP_DIR>
       DSTROOT=<TMP_DIR>
