@@ -102,3 +102,6 @@ def compute_build_subdir(args):
     if args.enable_tsan:
         build_subdir += "+tsan"
     return build_subdir
+
+def relocate_xdg_cache_home_under(new_cache_location):
+    os.environ['XDG_CACHE_HOME'] = new_cache_location
