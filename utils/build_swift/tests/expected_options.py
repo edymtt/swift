@@ -649,6 +649,7 @@ EXPECTED_OPTIONS = [
     PathOption('--android-ndk'),
     PathOption('--build-subdir'),
     SetTrueOption('--relocate-xdg-cache-home-under-build-subdir'),
+    SetOption('--no-relocate-xdg-cache-home-under-build-subdir', dest='relocate_xdg_cache_home_under_build_subdir', value=False),
     PathOption('--clang-profile-instr-use'),
     PathOption('--cmake'),
     PathOption('--coverage-db'),

@@ -348,6 +348,10 @@ def create_argument_parser():
                 'where build products will be placed; '
                 'this supports having multiple runs for different branches '
                 'in CI bots for Linux')
+    option('--no-relocate-xdg-cache-home-under-build-subdir',
+           store_false('relocate_xdg_cache_home_under_build_subdir'),
+           help='prevents alteration of $XDG_CACHE_HOME '
+                'and counters --relocate-xdg-cache-home-under-build-subdir')
     option('--install-prefix', store_path,
            default=targets.install_prefix(),
            help='The installation prefix. This is where built Swift products '
