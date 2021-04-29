@@ -1,0 +1,45 @@
+# RUN: %empty-directory(%t)
+# RUN: mkdir -p %t
+# RUN: mkdir -p %t/destdir
+# RUN: cp %swift_obj_root/bin/swift-demangle %t/destdir
+# RUN: ln -s %t/destdir/swift-demangle %t/destdir/swift-api-digester
+# RUN: cp %swift_src_root/utils/rusage.py %t/destdir
+# RUN: cp %swift_obj_root/lib/libswiftDemangle.dylib %t/destdir
+# RUN: cp %swift_obj_root/lib/libswiftASTSectionImporter.a %t/destdir
+# RUN: mkdir -p %t/symroot/macosx-%target-cpu
+# RUN: SWIFT_BUILD_ROOT=%t %swift_src_root/utils/build-script-impl --dry-run --build-dir=%t/build --workspace=%swift_src_root/.. --cmake %cmake --only-execute macosx-%target-cpu-extractsymbols --host-cc /usr/bin/true --darwin-install-extract-symbols=1 --host-target=macosx-%target-cpu --install-symroot=%t/symroot --install-destdir=%t/destdir --build-jobs=1 > %t/build-script-impl-output.txt 2>&1
+# RUN: %FileCheck --input-file=%t/build-script-impl-output.txt %s
+# RUN: %FileCheck --input-file=%t/build-script-impl-output.txt --check-prefixes CHECK-SKIPPED %s
+
+# REQUIRES: standalone_build
+# REQUIRES: OS=macosx
+
+# CHECK: --- Extracting symbols ---
+
+# CHECK-DAG: mock_dsymutil {{.*}}swift-demangle
+# CHECK-DAG: mock_dsymutil {{.*}}libswiftDemangle.dylib
+# CHECK-LABEL: "command": "dsymutil", "end"
+
+# CHECK-DAG: strip {{.*}}swift-demangle
+# CHECK-DAG: strip {{.*}}libswiftDemangle.dylib
+# CHECK-DAG: strip {{.*}}libswiftASTSectionImporter.a
+# CHECK-DAG: strip {{.*}}rusage.py
+# CHECK-LABEL: xcrun_find_tool codesign
+
+# CHECK: codesign {{.*}}libswiftDemangle.dylib
+
+# CHECK-SKIPPED: --- Extracting symbols ---
+
+# CHECK-SKIPPED-NOT: mock_dsymutil {{.*}}libswiftASTSectionImporter.a
+# CHECK-SKIPPED-NOT: mock_dsymutil {{.*}}rusage.py
+# CHECK-SKIPPED-NOT: mock_dsymutil {{.*}}swift-api-digester
+# CHECK-SKIPPED-LABEL: "command": "dsymutil", "end"
+
+# CHECK-SKIPPED-NOT: strip {{.*}}swift-api-digester
+# CHECK-SKIPPED-LABEL: xcrun_find_tool codesign
+
+# CHECK-SKIPPED-NOT: codesign {{.*}}swift-demangle
+# CHECK-SKIPPED-NOT: codesign {{.*}}libswiftASTSectionImporter.a
+# CHECK-SKIPPED-NOT: codesign {{.*}}rusage.py
+# CHECK-SKIPPED-NOT: codesign {{.*}}swift-api-digester
+
