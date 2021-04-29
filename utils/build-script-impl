@@ -3103,6 +3103,10 @@ function printJSONEndTimestamp() {
     printJSONTimestamp ${command} "end"
 }
 
+function c1grep() {
+    grep "$@" || test $? = 1
+}
+
 for host in "${ALL_HOSTS[@]}"; do
     # Check if we should perform this action.
     if ! [[ $(should_execute_action "${host}-extractsymbols") ]]; then
@@ -3130,15 +3134,11 @@ for host in "${ALL_HOSTS[@]}"; do
         # descibes
         host_symroot="${INSTALL_SYMROOT}/${host}"
 
-        # FIXME: Since it's hard to trace output pipe call,
-        #        For now, We don't support dry-run trace for this block
-        #        Instead, just echo we do "darwin_intall_extract_symbols".
+        install_symbols_wrapper=""
         if [[ "${DRY_RUN}" ]]; then
-            call darwin_install_extract_symbols
-            printJSONStartTimestamp dsymutil
-            echo xargs -n 1 -P ${DSYMUTIL_JOBS} dsymutil
-            printJSONEndTimestamp dsymutil
-        else
+            install_symbols_wrapper="echo"
+        fi
+        #else
             set -x
 
             CURRENT_INSTALL_DIR=${host_install_destdir}
@@ -3150,7 +3150,9 @@ for host in "${ALL_HOSTS[@]}"; do
              find ./"${CURRENT_PREFIX}" -perm -0111 -type f -print | cpio --insecure -pdm "${host_symroot}")
 
             dsymutil_path=
-            if [[ -n "${DARWIN_INSTALL_EXTRACT_SYMBOLS_USE_JUST_BUILT_DSYMUTIL}" ]]; then
+            if [[ "${DRY_RUN}" ]]; then
+                dsymutil_path="echo mock_dsymutil"
+            elif [[ -n "${DARWIN_INSTALL_EXTRACT_SYMBOLS_USE_JUST_BUILT_DSYMUTIL}" ]]; then
                 dsymutil_path=$(find_just_built_local_host_llvm_tool dsymutil)
             else
                 dsymutil_path=$(xcrun_find_tool dsymutil)
@@ -3165,9 +3167,9 @@ for host in "${ALL_HOSTS[@]}"; do
             printJSONStartTimestamp dsymutil
             (cd "${host_symroot}" &&
              find ./"${CURRENT_PREFIX}" -perm -0111 -type f -print | \
-               grep -v '.py$' | \
-               grep -v '.a$' | \
-               grep -v 'swift-api-digester' | \
+               c1grep -v '.py$' | \
+               c1grep -v '.a$' | \
+               c1grep -v 'swift-api-digester' | \
                xargs -n 1 -P ${DSYMUTIL_JOBS} ${dsymutil_path})
             printJSONEndTimestamp dsymutil
 
@@ -3175,16 +3177,16 @@ for host in "${ALL_HOSTS[@]}"; do
             # `host_install_destdir`.
             find "${CURRENT_INSTALL_DIR}${CURRENT_PREFIX}/" \
               '(' -perm -0111 -or -name "*.a" ')' -type f -print | \
-              xargs -n 1 -P ${BUILD_JOBS} $(xcrun_find_tool strip) -S
+              xargs -n 1 -P ${BUILD_JOBS} ${install_symbols_wrapper} $(xcrun_find_tool strip) -S
 
             # Codesign dylibs after strip tool
             # rdar://45388785
             find "${CURRENT_INSTALL_DIR}${CURRENT_PREFIX}/" \
               '(' -name "*.dylib" ')' -type f -print | \
-              xargs -n 1 -P ${BUILD_JOBS} $(xcrun_find_tool codesign) -f -s -
+              xargs -n 1 -P ${BUILD_JOBS} ${install_symbols_wrapper} $(xcrun_find_tool codesign) -f -s -
 
             { set +x; } 2>/dev/null
-        fi
+        #fi
     fi
 done
 # Everything is 'installed', but some products may be awaiting lipo.
