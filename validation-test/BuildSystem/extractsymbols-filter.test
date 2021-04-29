@@ -1,0 +1,53 @@
+# RUN: %empty-directory(%t)
+# RUN: mkdir -p %t
+# RUN: mkdir -p %t/destdir/bin
+# RUN: mkdir -p %t/destdir/lib
+# RUN: cp %swift_obj_root/bin/swift-demangle %t/destdir/bin
+# RUN: ln -s %t/destdir/bin/swift-demangle %t/destdir/bin/swift-api-digester
+# RUN: cp %swift_obj_root/bin/swift-def-to-yaml-converter %t/destdir/bin
+# RUN: cp %swift_src_root/utils/rusage.py %t/destdir/bin
+# RUN: cp %swift_obj_root/lib/libswiftDemangle.dylib %t/destdir/lib
+# RUN: cp %swift_obj_root/lib/lib_InternalSwiftScan.dylib %t/destdir/bin
+# RUN: cp %swift_obj_root/lib/libswiftASTSectionImporter.a %t/destdir/lib
+# RUN: mkdir -p %t/symroot/macosx-%target-cpu
+# RUN: SWIFT_BUILD_ROOT=%t %swift_src_root/utils/build-script-impl --dry-run --build-dir=%t/build --workspace=%swift_src_root/.. --cmake %cmake --only-execute macosx-%target-cpu-extractsymbols --host-cc /usr/bin/true --darwin-install-extract-symbols=1 --host-target=macosx-%target-cpu --install-symroot=%t/symroot --install-destdir=%t/destdir --build-jobs=1 --darwin-symroot-path-filters="/lib/ /swift-demangle"  2>&1 | tee %t/build-script-impl-output.txt
+# RUN: %FileCheck --input-file=%t/build-script-impl-output.txt %s
+# RUN: %FileCheck --input-file=%t/build-script-impl-output.txt --check-prefixes CHECK-SKIPPED %s
+
+# REQUIRES: standalone_build
+# REQUIRES: OS=macosx
+
+# CHECK: --- Extracting symbols ---
+
+# CHECK-DAG: mock_dsymutil {{.*}}swift-demangle
+# CHECK-DAG: mock_dsymutil {{.*}}libswiftDemangle.dylib
+# CHECK-LABEL: "command": "dsymutil", "end"
+
+# CHECK-DAG: strip {{.*}}swift-demangle
+# CHECK-DAG: strip {{.*}}swift-def-to-yaml-converter
+# CHECK-DAG: strip {{.*}}libswiftDemangle.dylib
+# CHECK-DAG: strip {{.*}}lib_InternalSwiftScan.dylib
+# CHECK-DAG: strip {{.*}}libswiftASTSectionImporter.a
+# CHECK-DAG: strip {{.*}}rusage.py
+# CHECK-LABEL: xcrun_find_tool codesign
+#
+# CHECK-DAG: codesign {{.*}}libswiftDemangle.dylib
+# CHECK-DAG: codesign {{.*}}lib_InternalSwiftScan.dylib
+
+# CHECK-SKIPPED: --- Extracting symbols ---
+
+# CHECK-SKIPPED-NOT: mock_dsymutil {{.*}}swift-def-to-yaml-converter
+# CHECK-SKIPPED_NOT: mock_dsymutil {{.*}}libswiftASTSectionImporter.a
+# CHECK-SKIPPED_NOT: mock_dsymutil {{.*}}rusage.py
+# CHECK-SKIPPED_NOT: mock_dsymutil {{.*}}swift-api-digester
+# CHECK-SKIPPED_NOT: mock_dsymutil {{.*}}lib_InternalSwiftScan.dylib
+# CHECK-SKIPPED-LABEL: "command": "dsymutil", "end"
+
+# CHECK-SKIPPED-NOT: strip {{.*}}swift-api-digester
+# CHECK-SKIPPED-LABEL: xcrun_find_tool codesign
+#
+# CHECK-SKIPPED-NOT: codesign {{.*}}swift-demangle
+# CHECK-SKIPPED-NOT: codesign {{.*}}libswiftASTSectionImporter.a
+# CHECK-SKIPPED-NOT: codesign {{.*}}rusage.py
+# CHECK-SKIPPED-NOT: codesign {{.*}}swift-api-digester
+# CHECK-SKIPPED-NOT: codesign {{.*}}swift-def-to-yaml-converter
