@@ -23,6 +23,23 @@ class HostSpecificConfiguration(object):
     """Configuration information for an individual host."""
 
     @staticmethod
+    def _compute_stdlib_targets_cross_compilation(host_target, stage_dependent_args):
+        # This is a host we are building as part of
+        # cross-compiling, so we only need the target itself.
+        stdlib_targets_to_configure = [host_target]
+        if stage_dependent_args.stdlib_deployment_targets:
+            # there are some build configs that expect
+            # not to be building the stdlib for the target
+            # since it will be provided by different means
+            stdlib_targets_to_build = set(
+                stdlib_targets_to_configure).intersection(
+                set(stage_dependent_args.stdlib_deployment_targets))
+        else:
+            stdlib_targets_to_build = set(stdlib_targets_to_configure)
+
+        return (stdlib_targets_to_configure, stdlib_targets_to_build)
+
+    @staticmethod
     def _compute_stdlib_targets(host_target, stage_dependent_args):
         # Compute the set of deployment targets to configure/build.
         if host_target == stage_dependent_args.host_target:
@@ -36,18 +53,9 @@ class HostSpecificConfiguration(object):
                     stage_dependent_args.build_stdlib_deployment_targets).intersection(
                     set(stage_dependent_args.stdlib_deployment_targets))
         else:
-            # Otherwise, this is a host we are building as part of
-            # cross-compiling, so we only need the target itself.
-            stdlib_targets_to_configure = [host_target]
-            if stage_dependent_args.stdlib_deployment_targets:
-                # there are some build configs that expect
-                # not to be building the stdlib for the target
-                # since it will be provided by different means
-                stdlib_targets_to_build = set(
-                    stdlib_targets_to_configure).intersection(
-                    set(stage_dependent_args.stdlib_deployment_targets))
-            else:
-                stdlib_targets_to_build = set(stdlib_targets_to_configure)
+            (stdlib_targets_to_configure, stdlib_targets_to_build) = \
+                HostSpecificConfiguration._compute_stdlib_targets_cross_compilation(
+                    host_target, stage_dependent_args)
 
         if hasattr(stage_dependent_args, 'stdlib_deployment_targets') and \
            stage_dependent_args.stdlib_deployment_targets == []:
