@@ -22,15 +22,8 @@ from .targets import StdlibDeploymentTarget
 class HostSpecificConfiguration(object):
     """Configuration information for an individual host."""
 
-    def __init__(self, host_target, args, stage_dependent_args=None):
-        """Initialize for the given `host_target`."""
-        # If we were not passed a stage_dependent_args object, then we do not need
-        # to make a distinction in between them and can just use args.
-        if not isinstance(args, compiler_stage.StageArgs):
-            args = compiler_stage.StageArgs(compiler_stage.STAGE_1, args)
-        if stage_dependent_args is None:
-            stage_dependent_args = args
-
+    @staticmethod
+    def _compute_stdlib_targets(host_target, stage_dependent_args):
         # Compute the set of deployment targets to configure/build.
         if host_target == stage_dependent_args.host_target:
             # This host is the user's desired product, so honor the requested
@@ -60,6 +53,20 @@ class HostSpecificConfiguration(object):
            stage_dependent_args.stdlib_deployment_targets == []:
             stdlib_targets_to_configure = []
             stdlib_targets_to_build = []
+
+        return (stdlib_targets_to_configure, stdlib_targets_to_build)
+
+    def __init__(self, host_target, args, stage_dependent_args=None):
+        """Initialize for the given `host_target`."""
+        # If we were not passed a stage_dependent_args object, then we do not need
+        # to make a distinction in between them and can just use args.
+        if not isinstance(args, compiler_stage.StageArgs):
+            args = compiler_stage.StageArgs(compiler_stage.STAGE_1, args)
+        if stage_dependent_args is None:
+            stage_dependent_args = args
+
+        (stdlib_targets_to_configure, stdlib_targets_to_build) = \
+            HostSpecificConfiguration._compute_stdlib_targets(host_target, stage_dependent_args)
 
         # Compute derived information from the arguments.
         #
