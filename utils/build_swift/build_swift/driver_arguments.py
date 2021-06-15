@@ -773,6 +773,11 @@ def create_argument_parser():
     option('--enable-new-runtime-build', toggle_true,
            help='True to enable the new runtime build.')
 
+    option(['--skip-build-stdlib-when-cross-compiling'],
+           toggle_false('build_stdlib_when_cross_compiling'),
+           help="Don't build the standard library when building "
+                "the Swift compiler for the cross compile hosts")
+
     # -------------------------------------------------------------------------
     in_group('Options to select projects')
 

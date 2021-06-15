@@ -78,7 +78,6 @@ class ToolchainTestCase(unittest.TestCase):
         args.build_ios_device = True
         args.host_target = 'macosx-x86_64'
         args.stdlib_deployment_targets = ['iphoneos-arm64']
-
         hsc = HostSpecificConfiguration('iphoneos-arm64', args)
 
         self.assertEqual(len(hsc.sdks_to_configure), 1)
@@ -110,6 +109,31 @@ class ToolchainTestCase(unittest.TestCase):
 
         self.assertEqual(len(hsc.sdks_to_configure), 0)
 
+        self.assertEqual(len(hsc.swift_stdlib_build_targets), 0)
+
+    def test_should_build_stdlib_when_cross_compiling_macos_by_default(self):
+        args = self.default_args()
+        args.build_osx = True
+        args.host_target = 'macosx-x86_64'
+        args.stdlib_deployment_targets = ['macosx-x86_64', 'macosx-arm64']
+
+        hsc = HostSpecificConfiguration('macosx-arm64', args)
+
+        self.assertEqual(len(hsc.sdks_to_configure), 1)
+        self.assertEqual(len(hsc.swift_stdlib_build_targets), 1)
+        self.assertIn('swift-test-stdlib-macosx-arm64',
+                      hsc.swift_stdlib_build_targets)
+
+    def test_should_skip_stdlib_when_cross_compiling_if_told_so_macos(self):
+        args = self.default_args()
+        args.build_osx = True
+        args.build_stdlib_when_cross_compiling = False
+        args.host_target = 'macosx-x86_64'
+        args.stdlib_deployment_targets = ['macosx-x86_64', 'macosx-arm64']
+
+        hsc = HostSpecificConfiguration('macosx-arm64', args)
+
+        self.assertEqual(len(hsc.sdks_to_configure), 0)
         self.assertEqual(len(hsc.swift_stdlib_build_targets), 0)
 
     def generate_should_skip_building_platform(
@@ -649,6 +673,7 @@ class ToolchainTestCase(unittest.TestCase):
             build_ios_simulator=False,
             build_linux=False,
             build_osx=False,
+            build_stdlib_when_cross_compiling=True,
             build_swift_stdlib_unittest_extra=False,
             build_tvos_device=False,
             build_tvos_simulator=False,

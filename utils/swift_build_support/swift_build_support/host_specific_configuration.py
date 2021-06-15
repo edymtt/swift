@@ -26,8 +26,11 @@ class HostSpecificConfiguration(object):
     def _compute_stdlib_targets_cross_compilation(host_target, stage_dependent_args):
         # This is a host we are building as part of
         # cross-compiling, so we only need the target itself.
-        stdlib_targets_to_configure = [host_target]
-        if stage_dependent_args.stdlib_deployment_targets:
+        if not stage_dependent_args.build_stdlib_when_cross_compiling:
+            stdlib_targets_to_configure = []
+            stdlib_targets_to_build = []
+        elif stage_dependent_args.stdlib_deployment_targets:
+            stdlib_targets_to_configure = [host_target]
             # there are some build configs that expect
             # not to be building the stdlib for the target
             # since it will be provided by different means
@@ -35,6 +38,7 @@ class HostSpecificConfiguration(object):
                 stdlib_targets_to_configure).intersection(
                 set(stage_dependent_args.stdlib_deployment_targets))
         else:
+            stdlib_targets_to_configure = [host_target]
             stdlib_targets_to_build = set(stdlib_targets_to_configure)
 
         return (stdlib_targets_to_configure, stdlib_targets_to_build)
