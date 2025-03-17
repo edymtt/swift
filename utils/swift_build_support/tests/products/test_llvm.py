@@ -23,6 +23,9 @@ from swift_build_support.toolchain import host_toolchain
 from swift_build_support.workspace import Workspace
 
 
+COMPILER_RT_OLD_CMAKE_SETTINGS = ['LLVM_TOOL_COMPILER_RT_BUILD']
+COMPILER_RT_NEW_CMAKE_SETTINGS = []
+
 class LLVMTestCase(unittest.TestCase):
 
     def setUp(self):
@@ -154,3 +157,40 @@ class LLVMTestCase(unittest.TestCase):
             '-DCLANG_REPOSITORY_STRING=clang-2.2.3',
             llvm.cmake_options
         )
+
+    def test_build_compiler_rt_old_way(self):
+        llvm = LLVM(
+            args=self.args,
+            toolchain=self.toolchain,
+            source_dir='/path/to/src',
+            build_dir='/path/to/build')
+
+        for setting in COMPILER_RT_OLD_CMAKE_SETTINGS:
+            self.assertGreater(
+            len([x for x in llvm.cmake_options if setting in x]),
+                0, f"{setting} is missing when building compiler-rt the old way"
+            )
+        for setting in COMPILER_RT_NEW_CMAKE_SETTINGS:
+            self.assertEqual(
+            len([x for x in llvm.cmake_options if setting in x]),
+                0, f"{setting} is not expected when building compiler-rt the old way"
+            )
+
+    def test_build_compiler_rt_new_way(self):
+        self.args.llvm_build_compiler_rt_with_use_runtimes = True
+        llvm = LLVM(
+            args=self.args,
+            toolchain=self.toolchain,
+            source_dir='/path/to/src',
+            build_dir='/path/to/build')
+
+        for setting in COMPILER_RT_OLD_CMAKE_SETTINGS:
+            self.assertEqual(
+            len([x for x in llvm.cmake_options if setting in x]),
+                0, f"{setting} is missing when building compiler-rt the new way"
+            )
+        for setting in COMPILER_RT_NEW_CMAKE_SETTINGS:
+            self.assertGreater(
+            len([x for x in llvm.cmake_options if setting in x]),
+                0, f"{setting} is missing when building compiler-rt the new way"
+            )

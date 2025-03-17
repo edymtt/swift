@@ -1398,6 +1398,11 @@ def create_argument_parser():
                 'separated options "-DCMAKE_VAR1=YES,-DCMAKE_VAR2=/tmp". Can '
                 'be called multiple times to add multiple such options.')
 
+    option('--llvm-build-compiler-rt-with-use-runtimes', toggle_true,
+           help='Switch to LLVM_USE_RUNTIMES as the mechanism to build compiler-rt'
+                'It will become the default after LLVM 20, this would allow '
+                'for a staged introduction or to account for edge cases')
+
     # -------------------------------------------------------------------------
     in_group('Build settings for Android')
 
