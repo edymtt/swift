@@ -170,3 +170,7 @@ copy_library_sources(_CUnicode "Sources" "Supplemental/StringProcessing/_StringP
   ROOT "${StringProcessing_ROOT_DIR}/swift-experimental-string-processing")
 copy_library_sources(RegexBuilder "Sources" "Supplemental/StringProcessing"
   ROOT "${StringProcessing_ROOT_DIR}/swift-experimental-string-processing")
+
+copy_library_sources("Distributed" "public" "Supplemental")
+copy_files(swift/runtime Supplemental/Distributed FILES CMakeConfig.h.in ROOT ${CMAKE_CURRENT_LIST_DIR}/../include)
+copy_library_sources(include "" "Supplemental/Distributed")
