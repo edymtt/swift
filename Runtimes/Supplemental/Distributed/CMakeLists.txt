@@ -1,5 +1,18 @@
 cmake_minimum_required(VERSION 3.29)
 
+if($ENV{BUILD_NUMBER})
+  math(EXPR BUILD_NUMBER "$ENV{BUILD_NUMBER} % 65535")
+  set(BUILD_NUMBER ".${BUILD_NUMBER}")
+endif()
+
+project(SwiftDistributed
+  LANGUAGES C CXX Swift 
+  VERSION 6.3.0${BUILD_NUMBER})
+
+if(NOT PROJECT_IS_TOP_LEVEL)
+  message(SEND_ERROR "Swift Distributed must build as a standalone project")
+endif()
+
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 set(CMAKE_C_VISIBILITY_PRESET "hidden")
 set(CMAKE_CXX_VISIBILITY_PRESET "hidden")
@@ -7,26 +20,11 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN YES)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/../cmake/modules")
 
-if($ENV{BUILD_NUMBER})
-  math(EXPR BUILD_NUMBER "$ENV{BUILD_NUMBER} % 65535")
-  set(BUILD_NUMBER ".${BUILD_NUMBER}")
-endif()
-project(SwiftDistributed
-  LANGUAGES C CXX Swift 
-  VERSION 6.2.0${BUILD_NUMBER})
-
 set(CMAKE_Swift_LANGUAGE_VERSION 5)
-
-if(NOT PROJECT_IS_TOP_LEVEL)
-  message(SEND_ERROR "Swift Distributed must build as a standalone project")
-endif()
 
 set(${PROJECT_NAME}_SWIFTC_SOURCE_DIR
   "${PROJECT_SOURCE_DIR}/../../../"
   CACHE FILEPATH "Path to the root source directory of the Swift compiler")
-
-set(${PROJECT_NAME}_VENDOR_MODULE_DIR "${CMAKE_SOURCE_DIR}/../cmake/modules/vendor"
-  CACHE FILEPATH "Location for private build system extension")
 
 set(${PROJECT_NAME}_VENDOR_MODULE_DIR "${CMAKE_SOURCE_DIR}/../cmake/modules/vendor"
   CACHE FILEPATH "Location for private build system extension")
@@ -39,7 +37,6 @@ include(PlatformInfo)
 
 find_package(SwiftCore)
 
-
 include("${${PROJECT_NAME}_VENDOR_MODULE_DIR}/Settings.cmake" OPTIONAL)
 
 option(${PROJECT_NAME}_ENABLE_LIBRARY_EVOLUTION "Generate ABI resilient runtime libraries"
@@ -47,18 +44,6 @@ option(${PROJECT_NAME}_ENABLE_LIBRARY_EVOLUTION "Generate ABI resilient runtime 
 
 option(${PROJECT_NAME}_ENABLE_PRESPECIALIZATION "Enable generic metadata prespecialization"
   ${SwiftCore_ENABLE_PRESPECIALIZATION})
-
-option(${PROJECT_NAME}_ARCH_SUBDIR "Architecture used for setting the architecture subdirectory"
-  ${SwiftCore_ARCH_SUBDIR})
-
-option(${PROJECT_NAME}_INSTALL_NESTED_SUBDIR "Install libraries under a platform and architecture subdirectory"
-  ${SwiftCore_INSTALL_NESTED_SUBDIR})
-
-option(${PROJECT_NAME}_PLATFORM_SUBDIR "Platform name used for installed swift{doc,module,interface} files"
-  ${SwiftCore_PLATFORM_SUBDIR})
-
-option(${PROJECT_NAME}_COMPILER_VARIANT_TARGET "Compiler variant target to use when emiting modules"
-  ${SwiftCore_COMPILER_VARIANT_TARGET})
 
 include(CatalystSupport)
 include(EmitSwiftInterface)
@@ -98,7 +83,6 @@ target_compile_options(swiftDistributed PRIVATE
 
 set_target_properties(swiftDistributed PROPERTIES
   Swift_MODULE_NAME Distributed
-  Swift_COMPILATION_MODE wholemodule
   LINKER_LANGUAGE CXX)
 
 if(APPLE AND BUILD_SHARED_LIBS)
@@ -128,7 +112,7 @@ set(${PROJECT_NAME}_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/swift$<$<NOT:$<BOOL:
 set(${PROJECT_NAME}_INSTALL_SWIFTMODULEDIR "${CMAKE_INSTALL_LIBDIR}/swift$<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:_static>$<$<BOOL:${Supplemental_INSTALL_NESTED_SUBDIR}>:/${Supplemental_PLATFORM_SUBDIR}>" CACHE STRING "")
 
 install(TARGETS swiftDistributed
-    EXPORT SwiftCoreTargets
+    EXPORT SwiftDistributedTargets
     COMPONENT SwiftDistributed_runtime
     ARCHIVE DESTINATION "${SwiftCore_INSTALL_LIBDIR}"
     LIBRARY DESTINATION "${SwiftCore_INSTALL_LIBDIR}"
@@ -139,6 +123,5 @@ install_swift_interface(swiftDistributed)
 # Configure plist creation for Darwin platforms.
 generate_plist("${CMAKE_PROJECT_NAME}" "${CMAKE_PROJECT_VERSION}" swiftDistributed)
 embed_manifest(swiftDistributed)
-
 
 include("${${PROJECT_NAME}_VENDOR_MODULE_DIR}/swiftDistributed.cmake" OPTIONAL)
