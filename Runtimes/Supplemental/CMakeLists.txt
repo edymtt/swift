@@ -46,10 +46,10 @@ if(SwiftRuntime_ENABLE_stringprocessing)
     INSTALL_COMMAND ""
     CMAKE_ARGS
       ${COMMON_OPTIONS})
-endif
+endif()
 
 # Distributed
-if(SwiftRuntime_ENABLE_synchronization)
+if(SwiftRuntime_ENABLE_distributed)
   ExternalProject_Add(Distributed
     PREFIX "Distributed"
     SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Distributed"

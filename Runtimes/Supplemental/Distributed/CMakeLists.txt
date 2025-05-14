@@ -47,6 +47,7 @@ option(${PROJECT_NAME}_ENABLE_PRESPECIALIZATION "Enable generic metadata prespec
 
 include(CatalystSupport)
 include(EmitSwiftInterface)
+include(InstallSwiftInterface)
 
 configure_file("CMakeConfig.h.in"
   "${PROJECT_BINARY_DIR}/include/swift/Runtime/CMakeConfig.h"
