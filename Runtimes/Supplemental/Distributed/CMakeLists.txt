@@ -114,9 +114,9 @@ set(${PROJECT_NAME}_INSTALL_SWIFTMODULEDIR "${CMAKE_INSTALL_LIBDIR}/swift$<$<NOT
 
 install(TARGETS swiftDistributed
     EXPORT SwiftDistributedTargets
-    COMPONENT SwiftDistributed_runtime
-    ARCHIVE DESTINATION "${SwiftCore_INSTALL_LIBDIR}"
-    LIBRARY DESTINATION "${SwiftCore_INSTALL_LIBDIR}"
+    COMPONENT ${PROJECT_NAME}_runtime
+    ARCHIVE DESTINATION "${${PROJECT_NAME}_INSTALL_LIBDIR}"
+    LIBRARY DESTINATION "${${PROJECT_NAME}_INSTALL_LIBDIR}"
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 emit_swift_interface(swiftDistributed)
 install_swift_interface(swiftDistributed)
