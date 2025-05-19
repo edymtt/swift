@@ -20,6 +20,9 @@ set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 set(CMAKE_C_VISIBILITY_PRESET "hidden")
 set(CMAKE_CXX_VISIBILITY_PRESET "hidden")
 set(CMAKE_VISIBILITY_INLINES_HIDDEN YES)
+set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
+set(CMAKE_CXX_STANDARD_REQUIRED YES)
+set(CMAKE_CXX_EXTENSIONS NO)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/../cmake/modules")
 
@@ -38,7 +41,6 @@ include(InstallSwiftInterface)
 include(PlatformInfo)
 include(ResourceEmbedding)
 include(CatalystSupport)
-include(CxxStandard)
 include(SwiftCallingConventions)
 
 option(${PROJECT_NAME}_INSTALL_NESTED_SUBDIR "Install libraries under a platform and architecture subdirectory" ON)
