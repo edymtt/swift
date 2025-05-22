@@ -32,7 +32,7 @@ The module may set the following variables if `SwiftCore_DIR` is not set.
  ``SwiftCore_FOUND``
    true if core was found
 
- ``SwiftCore_INCLUDE_DIR``
+ ``SwiftCore_Core_INCLUDE_DIR``
    the directory containing the Swift.swiftmodule folder
 
 #]=======================================================================]
@@ -55,52 +55,79 @@ include(FindPackageHandleStandardArgs)
 if(APPLE)
   # When building for Apple platforms, SwiftCore always comes from within the
   # SDK as a tbd for a shared library in the shared cache.
-  find_path(SwiftCore_INCLUDE_DIR
+  find_path(SwiftCore_Core_INCLUDE_DIR
       "Swift.swiftmodule"
     HINTS
       "${CMAKE_OSX_SYSROOT}/usr/lib/swift")
-  find_library(SwiftCore_IMPLIB
+  find_library(SwiftCore_Core_IMPLIB
     NAMES "libswiftCore.tbd"
     HINTS
       "${CMAKE_OSX_SYSROOT}/usr/lib/swift")
   add_library(swiftCore SHARED IMPORTED GLOBAL)
   set_target_properties(swiftCore PROPERTIES
-    IMPORTED_IMPLIB "${SwiftCore_IMPLIB}"
-    INTERFACE_INCLUDE_DIRECTORIES "${SwiftCore_INCLUDE_DIR}")
+    IMPORTED_IMPLIB "${SwiftCore_Core_IMPLIB}"
+    INTERFACE_INCLUDE_DIRECTORIES "${SwiftCore_Core_INCLUDE_DIR}")
+
+  find_path(SwiftCore_Shims_INCLUDE_DIR
+      "module.modulemap"
+    HINTS
+      "${CMAKE_OSX_SYSROOT}/usr/lib/swift/shims")
+  add_library(swiftShims SHARED IMPORTED GLOBAL)
+  set_target_properties(swiftShims PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${SwiftCore_Shims_INCLUDE_DIR}")
+  target_link_libraries(swiftCore
+    PUBLIC
+    SwiftShims)
+
+  find_path(SwiftCore_Concurrency_INCLUDE_DIR
+      "_Concurrency.swiftmodule"
+    HINTS
+      "${CMAKE_OSX_SYSROOT}/usr/lib/swift")
+  find_library(SwiftCore_Concurrency_IMPLIB
+    NAMES "libswift_Concurrency.tbd"
+    HINTS
+      "${CMAKE_OSX_SYSROOT}/usr/lib/swift")
+  add_library(swift_Concurrency SHARED IMPORTED GLOBAL)
+  set_target_properties(swift_Concurrency PROPERTIES
+    IMPORTED_IMPLIB "${SwiftCore_Concurrency_IMPLIB}"
+    INTERFACE_INCLUDE_DIRECTORIES "${SwiftCore_Concurrency_INCLUDE_DIR}")
+
   find_package_handle_standard_args(SwiftCore DEFAULT_MSG
-    SwiftCore_IMPLIB SwiftCore_INCLUDE_DIR)
+    SwiftCore_Core_IMPLIB SwiftCore_Core_INCLUDE_DIR
+    SwiftCore_Shims_INCLUDE_DIR
+    SwiftCore_Concurrency_IMPLIB SwiftCore_Concurrency_INCLUDE_DIR)
 elseif(LINUX)
   if (NOT BUILD_SHARED_LIBS)
-    find_path(SwiftCore_INCLUDE_DIR
+    find_path(SwiftCore_Core_INCLUDE_DIR
       "Swift.swiftmodule"
       HINTS
         "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
-    find_library(SwiftCore_LIBRARY
+    find_library(SwiftCore_Core_LIBRARY
       NAMES "libswiftCore.a"
       HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
     add_library(swiftCore STATIC IMPORTED GLOBAL)
   else()
-    find_path(SwiftCore_INCLUDE_DIR
+    find_path(SwiftCore_Core_INCLUDE_DIR
       "Swift.swiftmodule"
       HINTS
         "${Swift_SDKROOT}/usr/lib/swift/linux")
-    find_library(SwiftCore_LIBRARY
+    find_library(SwiftCore_Core_LIBRARY
       NAMES "libswiftCore.so"
       HINTS "${Swift_SDKROOT}/usr/lib/swift/linux")
     add_library(swiftCore SHARED IMPORTED GLOBAL)
   endif()
   set_target_properties(swiftCore PROPERTIES
-    IMPORTED_LOCATION "${SwiftCore_LIBRARY}"
-    INTERFACE_INCLUDE_DIRECTORIES "${SwiftCore_INCLUDE_DIR}")
+    IMPORTED_LOCATION "${SwiftCore_Core_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${SwiftCore_Core_INCLUDE_DIR}")
   find_package_handle_standard_args(SwiftCore DEFAULT_MSG
-    SwiftCore_LIBRARY SwiftCore_INCLUDE_DIR)
+    SwiftCore_Core_LIBRARY SwiftCore_Core_INCLUDE_DIR)
 elseif(WIN32)
-  find_path(SwiftCore_INCLUDE_DIR
+  find_path(SwiftCore_Core_INCLUDE_DIR
     "Swift.swiftmodule"
     HINTS
       "${Swift_SDKROOT}/usr/lib/swift/windows"
       "$ENV{SDKROOT}/usr/lib/swift/windows")
-  find_library(SwiftCore_LIBRARY
+  find_library(SwiftCore_Core_LIBRARY
     NAMES "libswiftCore.lib"
     HINTS
       "${Swift_SDKROOT}/usr/lib/swift/${SwiftCore_PLATFORM_SUBDIR}/${SwiftCore_ARCH_SUBDIR}"
@@ -110,10 +137,10 @@ elseif(WIN32)
 
   add_library(swiftCore SHARED IMPORTED GLOBAL)
   set_target_properties(swiftCore PROPERTIES
-    IMPORTED_IMPLIB "${SwiftCore_LIBRARY}"
-    INTERFACE_INCLUDE_DIRECTORIES "${SwiftCore_INCLUDE_DIR}")
+    IMPORTED_IMPLIB "${SwiftCore_Core_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${SwiftCore_Core_INCLUDE_DIR}")
   find_package_handle_standard_args(SwiftCore DEFAULT_MSG
-    SwiftCore_LIBRARY SwiftCore_INCLUDE_DIR)
+    SwiftCore_Core_LIBRARY SwiftCore_Core_INCLUDE_DIR)
 else()
   message(FATAL_ERROR "FindSwiftCore.cmake module search not implemented for targeted platform\n"
   " Build Core for your platform and set `SwiftCore_DIR` to"
