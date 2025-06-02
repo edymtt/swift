@@ -115,10 +115,10 @@ elseif(LINUX)
     find_path(SwiftCore_INCLUDE_DIR
       "Swift.swiftmodule"
       HINTS
-        "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
+        "${Swift_SDKROOT}/usr/lib/swift_static/linux")
     find_library(SwiftCore_LIBRARY
       NAMES "libswiftCore.a"
-      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
+      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux")
     add_library(swiftCore STATIC IMPORTED GLOBAL)
 
     find_path(Shims_INCLUDE_DIR
@@ -130,19 +130,19 @@ elseif(LINUX)
     find_path(SwiftOnoneSupport_INCLUDE_DIR
       "SwiftOnoneSupport.swiftmodule"
       HINTS
-        "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
+        "${Swift_SDKROOT}/usr/lib/swift_static/linux")
     find_library(SwiftOnoneSupport_LIBRARY
       NAMES "libswiftSwiftOnoneSupport.a"
-      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
+      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux")
     add_library(swiftOnoneSupport STATIC IMPORTED GLOBAL)
 
     find_path(SwiftConcurrency_INCLUDE_DIR
       "_Concurrency.swiftmodule"
       HINTS
-        "${Swift_SDKROO10GT}/usr/lib/swift_static/linux-static")
+        "${Swift_SDKROO10GT}/usr/lib/swift_static/linux")
     find_library(SwiftConcurrency_LIBRARY
       NAMES "libswift_Concurrency.a"
-      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
+      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux")
     add_library(swift_Concurrency STATIC IMPORTED GLOBAL)
   else()
     find_path(SwiftCore_INCLUDE_DIR
@@ -155,9 +155,9 @@ elseif(LINUX)
     add_library(swiftCore SHARED IMPORTED GLOBAL)
 
     find_path(Shims_INCLUDE_DIR
-        "module.modulemap"
+        "shims/module.modulemap"
         HINTS
-        "${Swift_SDKROOT}/usr/lib/swift/shims")
+        "${Swift_SDKROOT}/usr/lib/swift")
     add_library(swiftShims INTERFACE IMPORTED GLOBAL)
 
     find_path(SwiftOnoneSupport_INCLUDE_DIR
