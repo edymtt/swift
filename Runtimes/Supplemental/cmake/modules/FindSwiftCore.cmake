@@ -115,10 +115,10 @@ elseif(LINUX)
     find_path(SwiftCore_INCLUDE_DIR
       "Swift.swiftmodule"
       HINTS
-        "${Swift_SDKROOT}/usr/lib/swift_static/linux")
+        "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
     find_library(SwiftCore_LIBRARY
       NAMES "libswiftCore.a"
-      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux")
+      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
     add_library(swiftCore STATIC IMPORTED GLOBAL)
 
     find_path(Shims_INCLUDE_DIR
@@ -130,19 +130,19 @@ elseif(LINUX)
     find_path(SwiftOnoneSupport_INCLUDE_DIR
       "SwiftOnoneSupport.swiftmodule"
       HINTS
-        "${Swift_SDKROOT}/usr/lib/swift_static/linux")
+        "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
     find_library(SwiftOnoneSupport_LIBRARY
       NAMES "libswiftSwiftOnoneSupport.a"
-      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux")
+      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
     add_library(swiftOnoneSupport STATIC IMPORTED GLOBAL)
 
     find_path(SwiftConcurrency_INCLUDE_DIR
       "_Concurrency.swiftmodule"
       HINTS
-        "${Swift_SDKROO10GT}/usr/lib/swift_static/linux")
+        "${Swift_SDKROO10GT}/usr/lib/swift_static/linux-static")
     find_library(SwiftConcurrency_LIBRARY
       NAMES "libswift_Concurrency.a"
-      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux")
+      HINTS "${Swift_SDKROOT}/usr/lib/swift_static/linux-static")
     add_library(swift_Concurrency STATIC IMPORTED GLOBAL)
   else()
     find_path(SwiftCore_INCLUDE_DIR
@@ -207,7 +207,7 @@ elseif(WIN32)
       "${Swift_SDKROOT}/usr/lib/swift/windows"
       "$ENV{SDKROOT}/usr/lib/swift/windows")
   find_library(SwiftCore_LIBRARY
-    NAMES "libswiftCore.lib"
+    NAMES "swiftCore.lib"
     HINTS
       "${Swift_SDKROOT}/usr/lib/swift/${SwiftCore_PLATFORM_SUBDIR}/${SwiftCore_ARCH_SUBDIR}"
       "${Swift_SDKROOT}/usr/lib/swift"
@@ -237,7 +237,7 @@ elseif(WIN32)
       "${Swift_SDKROOT}/usr/lib/swift/windows"
       "$ENV{SDKROOT}/usr/lib/swift/windows")
   find_library(SwiftOnoneSupport_LIBRARY
-    NAMES "libswiftSwiftOnoneSupport.lib"
+    NAMES "swiftSwiftOnoneSupport.lib"
     HINTS
       "${Swift_SDKROOT}/usr/lib/swift/${SwiftCore_PLATFORM_SUBDIR}/${SwiftCore_ARCH_SUBDIR}"
       "${Swift_SDKROOT}/usr/lib/swift"
@@ -250,12 +250,12 @@ elseif(WIN32)
     INTERFACE_INCLUDE_DIRECTORIES "${SwiftOnoneSupport_INCLUDE_DIR}")
 
   find_path(SwiftConcurrency_INCLUDE_DIR
-    "Concurrency.swiftmodule"
+    "_Concurrency.swiftmodule"
     HINTS
       "${Swift_SDKROOT}/usr/lib/swift/windows"
       "$ENV{SDKROOT}/usr/lib/swift/windows")
   find_library(SwiftConcurrency_LIBRARY
-    NAMES "libswift_Concurrency.lib"
+    NAMES "swift_Concurrency.lib"
     HINTS
       "${Swift_SDKROOT}/usr/lib/swift/${SwiftCore_PLATFORM_SUBDIR}/${SwiftCore_ARCH_SUBDIR}"
       "${Swift_SDKROOT}/usr/lib/swift"
@@ -270,8 +270,8 @@ elseif(WIN32)
   find_package_handle_standard_args(SwiftCore DEFAULT_MSG
     SwiftCore_LIBRARY SwiftCore_INCLUDE_DIR
     Shims_INCLUDE_DIR
-    SwiftOnoneSupport_IMPLIB SwiftOnoneSupport_INCLUDE_DIR
-    SwiftConcurrency_IMPLIB SwiftConcurrency_INCLUDE_DIR)
+    SwiftOnoneSupport_LIBRARY SwiftOnoneSupport_INCLUDE_DIR
+    SwiftConcurrency_LIBRARY SwiftConcurrency_INCLUDE_DIR)
 else()
   message(FATAL_ERROR "FindSwiftCore.cmake module search not implemented for targeted platform\n"
   " Build Core for your platform and set `SwiftCore_DIR` to"
