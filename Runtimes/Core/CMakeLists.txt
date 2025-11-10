@@ -116,7 +116,7 @@ option(SwiftCore_ENABLE_UNICODE_DATA "Include unicode data in Swift runtimes" ON
 option(SwiftCore_ENABLE_SHORT_MANGLING_LOOKUPS "Build with fast-path context descriptor lookups based on well-known short manglings." ON)
 option(SwiftCore_ENABLE_FILESYSTEM_SUPPORT "Build for systems that have a filesystem" ON)
 option(SwiftCore_ENABLE_OS_TRACE_LAZY_INIT "Use os_trace call to check if lazy init has been completed before making os_signpost calls." ${SwiftCore_HAS_OS_TRACE})
-option(SwiftCore_HAS_DARWIN_LIBMALLOC "Use Darwin malloc features" ${APPLE})
+option(SwiftCore_HAS_DARIN_LIBMALLOC "Use Darwin malloc features" ${APPLE})
 
 defaulted_option(SwiftCore_ENABLE_BACKTRACING "Enable backtracing runtime support")
 defaulted_set(SwiftCore_BACKTRACER_PATH STRING "Set a fixed path to the Swift backtracer")
