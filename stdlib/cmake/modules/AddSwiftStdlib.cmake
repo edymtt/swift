@@ -1375,6 +1375,7 @@ function(add_swift_target_library_single target name)
          ${SWIFTLIB_INCORPORATED_OBJECT_LIBRARIES_EXPRESSIONS_SHARED_ONLY})
   endif()
 
+  message(STATUS "DEBUG== CMAKE_OSX_ARCHITECTURES ${CMAKE_OSX_ARCHITECTURES}")
   add_library("${target}" ${libkind}
               ${SWIFTLIB_SINGLE_SOURCES}
               ${SWIFTLIB_SINGLE_EXTERNAL_SOURCES}
