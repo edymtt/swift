@@ -11,7 +11,9 @@
 # ----------------------------------------------------------------------------
 
 import os
+import shlex
 import shutil
+import multiprocessing
 from platform import system
 
 from . import cmake_product
@@ -850,8 +852,18 @@ class LLVMCombined(cmake_product.CMakeProduct):
 
         Whether or not this product should be tested with the given arguments.
         """
+        if self.is_cross_compile_target(host_target):
+            return False
 
-        # We don't test LLVM
+        if self.args.build_swift:
+            if self.args.test or self.args.long_test or self.args.stress_test:
+                return True
+            if self.args.benchmark:
+                return True
+
+        if self.args.build_lldb and self.args.test:
+            return True
+
         return False
 
     def test(self, host_target):
@@ -860,7 +872,90 @@ class LLVMCombined(cmake_product.CMakeProduct):
 
         This phase might build and execute the product tests.
         """
-        pass
+        host_config = HostSpecificConfiguration(host_target, self.args)
+
+        # 1. Swift tests
+        if self.args.build_swift:
+            executable_target = None
+            results_targets = []
+            if self.args.test or self.args.long_test or self.args.stress_test:
+                executable_target = "SwiftUnitTests"
+                results_targets.extend(host_config.swift_test_run_targets)
+                if self.args.stress_test:
+                    results_targets.append("stress-SourceKit")
+
+            if self.args.benchmark:
+                results_targets.extend(host_config.swift_benchmark_run_targets)
+
+            if results_targets:
+                self.test_with_cmake(executable_target, results_targets,
+                                     self.args.llvm_build_variant, [])
+
+        # 2. LLDB tests
+        if self.args.build_lldb and self.args.test:
+            results_dir = os.path.join(self.build_dir, 'lldb-test-results')
+            shell.makedirs(results_dir)
+
+            lit_args = []
+            if self.args.lit_args:
+                lit_args.extend(shlex.split(self.args.lit_args))
+
+            lit_args.append('--xunit-xml-output={}/results.xml'.format(results_dir))
+
+            # ASAN adjustment
+            is_asan = self.args.enable_asan or \
+                (self.args.lldb_extra_cmake_args and
+                 any("Address" in arg for arg in self.args.lldb_extra_cmake_args))
+
+            if is_asan:
+                phys_cpu = 0
+                if system() == 'Darwin':
+                    try:
+                        phys_cpu = int(shell.capture(
+                            ['sysctl', '-n', 'hw.physicalcpu'],
+                            dry_run=False).strip())
+                    except Exception:
+                        pass
+                if phys_cpu == 0:
+                    phys_cpu = multiprocessing.cpu_count()
+
+                lit_jobs = self.args.lit_jobs
+                limit = int(phys_cpu / 1.5)
+                jobs = min(lit_jobs, limit)
+                lit_args.extend(['-j', str(jobs)])
+            else:
+                lit_args.extend(['-j', str(self.args.lit_jobs)])
+
+            lit_filter_args = []
+            if getattr(self.args, 'lldb_test_swift_only', False):
+                lit_filter_args.append("--filter=[sS]wift")
+
+            print("--- Running LLDB unit tests ---")
+            self.build_with_cmake(['unittests/LLDBUnitTests'],
+                                  self.args.llvm_build_variant, [])
+
+            print("--- Running LLDB tests ---")
+            self.build_with_cmake(['lldb-test-deps'],
+                                  self.args.llvm_build_variant, [])
+
+            llvm_lit = os.path.join(self.build_dir, 'bin', 'llvm-lit')
+            lldb_test_dir = os.path.join(self.source_dir, 'lldb', 'test')
+
+            with shell.pushd(results_dir):
+                shell.call([llvm_lit, lldb_test_dir] + lit_args + lit_filter_args)
+
+            if getattr(self.args, 'lldb_test_swift_compatibility', None) and \
+               os.access(self.args.lldb_test_swift_compatibility, os.X_OK):
+                print("Running LLDB swift compatibility tests against {}".format(
+                    self.args.lldb_test_swift_compatibility))
+                dotest_args = ("-G swift-history --swift-compiler \"{}\""
+                               .format(self.args.lldb_test_swift_compatibility))
+                compat_lit_args = lit_args + [
+                    '--param', 'dotest-args={}'.format(dotest_args),
+                    '--filter=compat']
+                with shell.pushd(results_dir):
+                    shell.call([llvm_lit, lldb_test_dir] + compat_lit_args)
+
 
     def should_install(self, host_target):
         """should_install() -> Bool
