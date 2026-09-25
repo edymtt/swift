@@ -16,6 +16,9 @@ from platform import system
 
 from . import cmake_product
 from . import cmark
+from . import earlyswiftdriver
+from . import libcxx
+from . import staticswiftlinux
 from .. import shell
 from .. import targets
 from ..cmake import CMakeOptions
@@ -94,7 +97,10 @@ class LLVMCombined(cmake_product.CMakeProduct):
 
     @classmethod
     def get_dependencies(cls):
-        return [cmark.CMark]
+        return [cmark.CMark,
+                earlyswiftdriver.EarlySwiftDriver,
+                staticswiftlinux.StaticSwiftLinuxConfig,
+                libcxx.LibCXX]
 
     def llvm_c_flags(self, platform, arch):
         result = self.common_cross_c_flags(platform, arch, include_arch=False)
