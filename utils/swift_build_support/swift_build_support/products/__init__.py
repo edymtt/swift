@@ -28,6 +28,7 @@ from .libxml2 import LibXML2
 from .llbuild import LLBuild
 from .lldb import LLDB
 from .llvm import LLVM
+from .llvm_combined import LLVMCombined
 from .minimalstdlib import MinimalStdlib
 from .ninja import Ninja
 from .playgroundsupport import PlaygroundSupport
@@ -67,6 +68,7 @@ __all__ = [
     'LLBuild',
     'LLDB',
     'LLVM',
+    'LLVMCombined',
     'MinimalStdlib',
     'Ninja',
     'PlaygroundSupport',
