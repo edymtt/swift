@@ -1136,6 +1136,10 @@ def create_argument_parser():
            const=False,
            help='disable assertions in LLDB')
 
+    option('--lldb-test-swift-compatibility', store,
+           type=str,
+           help='specify additional Swift compilers to test lldb with')
+
     option('--llbuild-assertions', store,
            const=True,
            help='enable assertions in llbuild')
