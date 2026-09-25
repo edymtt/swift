@@ -49,6 +49,28 @@ class LLVMCombined(cmake_product.CMakeProduct):
         # Add linker flags if specified
         self.cmake_options.extend(self._use_linker)
 
+        if args.build_swift:
+            from .swift import Swift
+            swift_product = Swift(args, toolchain, source_dir, build_dir)
+
+            # Filter out vendor and version flags that we explicitly merged
+            # in LLVMCombined to prevent redundancies.
+            handled_vars = [
+                'SWIFT_VENDOR', 'SWIFT_VENDOR_UTI', 'SWIFT_VERSION',
+                'CLANG_COMPILER_VERSION', 'SWIFT_COMPILER_VERSION',
+                'SWIFT_TOOLCHAIN_VERSION'
+            ]
+
+            for option in swift_product.cmake_options:
+                is_handled = False
+                for var in handled_vars:
+                    if option.startswith(f'-D{var}=') or \
+                       option.startswith(f'-D{var}:'):
+                        is_handled = True
+                        break
+                if not is_handled:
+                    self.cmake_options.extend_raw([option])
+
     @classmethod
     def is_build_script_impl_product(cls):
         """is_build_script_impl_product -> bool
@@ -73,12 +95,20 @@ class LLVMCombined(cmake_product.CMakeProduct):
         if self.args.compiler_vendor != "apple":
             raise RuntimeError("Unknown compiler vendor?!")
 
-        return [
+        flags = [
             ('CLANG_VENDOR', 'Apple'),
             ('CLANG_VENDOR_UTI', 'com.apple.compilers.llvm.clang'),
             # This is safe since we always provide a default.
             ('PACKAGE_VERSION', str(self.args.clang_user_visible_version))
         ]
+
+        if self.args.build_swift:
+            flags.extend([
+                ('SWIFT_VENDOR', 'Apple'),
+                ('SWIFT_VENDOR_UTI', 'com.apple.compilers.llvm.swift'),
+                ('SWIFT_VERSION', str(self.args.swift_user_visible_version)),
+            ])
+        return flags
 
     @property
     def _version_flags(self):
@@ -87,6 +117,20 @@ class LLVMCombined(cmake_product.CMakeProduct):
             result.define(
                 'CLANG_REPOSITORY_STRING',
                 "clang-{}".format(self.args.clang_compiler_version))
+            if self.args.build_swift:
+                result.define('CLANG_COMPILER_VERSION',
+                              str(self.args.clang_compiler_version))
+
+        if self.args.build_swift:
+            if self.args.swift_compiler_version is not None:
+                swift_compiler_version = str(self.args.swift_compiler_version)
+                result.define('SWIFT_COMPILER_VERSION', swift_compiler_version)
+                result.define('SWIFT_TOOLCHAIN_VERSION',
+                              "swiftlang-" + swift_compiler_version)
+            else:
+                toolchain_version = os.environ.get('TOOLCHAIN_VERSION')
+                if toolchain_version:
+                    result.define('SWIFT_TOOLCHAIN_VERSION', toolchain_version)
         return result
 
     @property
