@@ -357,7 +357,9 @@ class LLVMCombined(cmake_product.CMakeProduct):
                 'COMPILER_RT_FORCE_BUILD_BAREMETAL_MACHO_BUILTINS_ARCHS:'
                 'STRING', 'armv6 armv6m armv7 armv7m armv7em armv8m.main armv8.1m.main')
 
-        llvm_enable_projects = ['clang'] #, 'lldb']
+        llvm_enable_projects = ['clang']
+        if self.args.build_lldb:
+            llvm_enable_projects.append('lldb')
         llvm_enable_runtimes = []
 
         if self.args.build_compiler_rt and \
@@ -386,15 +388,15 @@ class LLVMCombined(cmake_product.CMakeProduct):
                                   ';'.join(llvm_enable_projects))
         llvm_cmake_options.define('LLVM_ENABLE_RUNTIMES',
                                   ';'.join(llvm_enable_runtimes))
-        #llvm_cmake_options.define('LLVM_EXTERNAL_PROJECTS',
-        #                          'swift')
-        llvm_cmake_options.define('LLVM_EXTERNAL_SWIFT_SOURCE_DIR',
-                                  os.path.join(self.source_dir, '../../swift'))
-        llvm_cmake_options.define('cmark-gfm_DIR',
-                                '../../build/buildbot_incremental_unified_llvm/cmark-install/usr/local/lib/cmake')
-                                #  os.path.join(self.build_dir, '../cmark-macosx-arm64'))
-        llvm_cmake_options.define('SWIFT_PATH_TO_STRING_PROCESSING_SOURCE',
-                                  os.path.join(self.source_dir, '../../swift-experimental-string-processing '))
+        if self.args.build_swift:
+            llvm_cmake_options.define('LLVM_EXTERNAL_PROJECTS',
+                                      'swift')
+            llvm_cmake_options.define('LLVM_EXTERNAL_SWIFT_SOURCE_DIR',
+                                    os.path.join(self.source_dir, '../../swift'))
+            llvm_cmake_options.define('cmark-gfm_DIR',
+                                      os.path.join(self.build_dir, '../cmark-install/usr/local/lib/cmake'))
+            llvm_cmake_options.define('SWIFT_PATH_TO_STRING_PROCESSING_SOURCE',
+                                    os.path.join(self.source_dir, '../../swift-experimental-string-processing '))
 
         # NOTE: This is not a dead option! It is relied upon for certain
         # bots/build-configs!
