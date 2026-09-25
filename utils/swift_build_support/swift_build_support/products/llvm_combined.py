@@ -436,11 +436,264 @@ class LLVMCombined(cmake_product.CMakeProduct):
             llvm_cmake_options.define('LLVM_EXTERNAL_PROJECTS',
                                       'swift')
             llvm_cmake_options.define('LLVM_EXTERNAL_SWIFT_SOURCE_DIR',
-                                    os.path.join(self.source_dir, '../../swift'))
+                                      os.path.join(self.source_dir, '../../swift'))
             llvm_cmake_options.define('cmark-gfm_DIR',
                                       os.path.join(self.build_dir, '../cmark-install/usr/local/lib/cmake'))
             llvm_cmake_options.define('SWIFT_PATH_TO_STRING_PROCESSING_SOURCE',
-                                    os.path.join(self.source_dir, '../../swift-experimental-string-processing '))
+                                      os.path.join(self.source_dir, '../../swift-experimental-string-processing '))
+
+            # Incorporate Swift CMake options from build-script-impl
+            # (lines 1693-2130)
+
+            def add_swift_bool(cmake_var, arg_name=None):
+                arg_name = arg_name or cmake_var.lower()
+                val = getattr(self.args, arg_name, None)
+                if val is not None:
+                    llvm_cmake_options.define(cmake_var + ':BOOL', val)
+
+            def add_swift_string(cmake_var, arg_name=None):
+                arg_name = arg_name or cmake_var.lower()
+                val = getattr(self.args, arg_name, None)
+                if val is not None and str(val) != "":
+                    llvm_cmake_options.define(cmake_var + ':STRING', str(val))
+
+            llvm_cmake_options.define('SWIFT_ANALYZE_CODE_COVERAGE:STRING',
+                                      str(self.args.swift_analyze_code_coverage).upper())
+            llvm_cmake_options.define('SWIFT_STDLIB_BUILD_TYPE:STRING',
+                                      self.args.swift_stdlib_build_variant)
+            add_swift_bool('SWIFT_STDLIB_ASSERTIONS', 'swift_stdlib_assertions')
+            add_swift_bool('SWIFT_STDLIB_ENABLE_DEBUG_PRECONDITIONS_IN_RELEASE')
+            add_swift_bool('SWIFT_STDLIB_ENABLE_STRICT_AVAILABILITY',
+                           'swift_stdlib_strict_availability')
+            add_swift_bool('SWIFT_ENABLE_DISPATCH')
+            add_swift_bool('SWIFT_IMPLICIT_CONCURRENCY_IMPORT')
+            add_swift_bool('SWIFT_STDLIB_SUPPORT_BACK_DEPLOYMENT')
+            add_swift_bool('SWIFT_STDLIB_SINGLE_THREADED_CONCURRENCY')
+            add_swift_bool('SWIFT_STDLIB_TASK_TO_THREAD_MODEL_CONCURRENCY')
+
+            # SWIFT_ENABLE_RUNTIME_FUNCTION_COUNTERS fallback to
+            # swift_stdlib_assertions
+            func_counters = getattr(self.args,
+                                    'swift_enable_runtime_function_counters',
+                                    None)
+            if func_counters is None or str(func_counters) == "":
+                func_counters = self.args.swift_stdlib_assertions
+            llvm_cmake_options.define('SWIFT_ENABLE_RUNTIME_FUNCTION_COUNTERS:BOOL',
+                                      func_counters)
+
+            add_swift_bool('SWIFT_STDLIB_HAS_DLADDR')
+            add_swift_bool('SWIFT_STDLIB_HAS_DLSYM')
+            add_swift_bool('SWIFT_STDLIB_HAS_FILESYSTEM')
+            add_swift_bool('SWIFT_RUNTIME_STATIC_IMAGE_INSPECTION')
+            add_swift_bool('SWIFT_STDLIB_OS_VERSIONING')
+            add_swift_bool('SWIFT_STDLIB_HAS_COMMANDLINE')
+            add_swift_bool('SWIFT_STDLIB_HAS_DARWIN_LIBMALLOC')
+            add_swift_bool('SWIFT_STDLIB_HAS_STDIN')
+            add_swift_bool('SWIFT_STDLIB_HAS_ENVIRON')
+            add_swift_string('SWIFT_STDLIB_ENABLE_LTO', 'swift_stdlib_lto')
+            add_swift_bool('SWIFT_STDLIB_PASSTHROUGH_METADATA_ALLOCATOR')
+            add_swift_bool('SWIFT_STDLIB_SHORT_MANGLING_LOOKUPS')
+            add_swift_bool('SWIFT_STDLIB_ENABLE_VECTOR_TYPES')
+            add_swift_bool('SWIFT_STDLIB_HAS_TYPE_PRINTING')
+            add_swift_string('SWIFT_STDLIB_TRAP_FUNCTION')
+            add_swift_bool('SWIFT_STDLIB_EXPERIMENTAL_HERMETIC_SEAL_AT_LINK')
+            add_swift_bool('SWIFT_STDLIB_DISABLE_INSTANTIATION_CACHES')
+            add_swift_string('SWIFT_STDLIB_REFLECTION_METADATA')
+
+            add_swift_bool('SWIFT_BUILD_CLANG_OVERLAYS',
+                           'build_swift_clang_overlays')
+            add_swift_bool('SWIFT_BUILD_REMOTE_MIRROR',
+                           'build_swift_remote_mirror')
+            add_swift_bool('SWIFT_STDLIB_SIL_DEBUGGING',
+                           'build_sil_debugging_stdlib')
+            add_swift_bool('SWIFT_CHECK_INCREMENTAL_COMPILATION',
+                           'check_incremental_compilation')
+            add_swift_bool('SWIFT_ENABLE_ARRAY_COW_CHECKS',
+                           'enable_array_cow_checks')
+            add_swift_bool('SWIFT_REPORT_STATISTICS', 'report_statistics')
+            add_swift_bool('SWIFT_BUILD_DYNAMIC_STDLIB',
+                           'build_swift_dynamic_stdlib')
+            add_swift_bool('SWIFT_BUILD_STATIC_STDLIB',
+                           'build_swift_static_stdlib')
+            add_swift_bool('SWIFT_BUILD_DYNAMIC_SDK_OVERLAY',
+                           'build_swift_dynamic_sdk_overlay')
+            add_swift_bool('SWIFT_BUILD_STATIC_SDK_OVERLAY',
+                           'build_swift_static_sdk_overlay')
+
+            # SWIFT_BUILD_PERF_TESTSUITE -> not skip_build_benchmarks
+            llvm_cmake_options.define('SWIFT_BUILD_PERF_TESTSUITE:BOOL',
+                                      not self.args.skip_build_benchmarks)
+
+            add_swift_bool('SWIFT_BUILD_EXAMPLES', 'build_swift_examples')
+            add_swift_bool('SWIFT_BUILD_LIBEXEC', 'build_swift_libexec')
+            add_swift_bool('SWIFT_INCLUDE_TESTS', 'swift_include_tests')
+            add_swift_bool('SWIFT_EMBED_BITCODE_SECTION', 'embed_bitcode_section')
+
+            lto_type = getattr(self.args, 'swift_tools_enable_lto',
+                               self.args.lto_type)
+            if lto_type:
+                llvm_cmake_options.define('SWIFT_TOOLS_ENABLE_LTO:STRING',
+                                          lto_type)
+
+            add_swift_bool('SWIFT_BUILD_RUNTIME_WITH_HOST_COMPILER')
+
+            libdispatch_build_type = getattr(self.args,
+                                             'libdispatch_build_variant',
+                                             self.args.build_variant)
+            llvm_cmake_options.define('LIBDISPATCH_CMAKE_BUILD_TYPE:STRING',
+                                      libdispatch_build_type)
+
+            swift_syntax_src = os.path.join(self.source_dir, '../../swift-syntax')
+            llvm_cmake_options.define('SWIFT_PATH_TO_SWIFT_SYNTAX_SOURCE:PATH',
+                                      swift_syntax_src)
+            add_swift_bool('SWIFT_ENABLE_BACKTRACING')
+            add_swift_bool('SWIFT_STDLIB_OVERRIDABLE_RETAIN_RELEASE')
+
+            if self.args.build_toolchain_only:
+                llvm_cmake_options.define('SWIFT_TOOL_SIL_OPT_BUILD', 'FALSE')
+                llvm_cmake_options.define('SWIFT_TOOL_SWIFT_IDE_TEST_BUILD', 'FALSE')
+                llvm_cmake_options.define('SWIFT_TOOL_SWIFT_REMOTEAST_TEST_BUILD',
+                                          'FALSE')
+                llvm_cmake_options.define('SWIFT_TOOL_LLDB_MODULEIMPORT_TEST_BUILD',
+                                          'FALSE')
+                llvm_cmake_options.define('SWIFT_TOOL_SIL_EXTRACT_BUILD', 'FALSE')
+                llvm_cmake_options.define('SWIFT_TOOL_SWIFT_LLVM_OPT_BUILD', 'FALSE')
+                llvm_cmake_options.define('SWIFT_TOOL_SWIFT_SDK_ANALYZER_BUILD',
+                                          'FALSE')
+                llvm_cmake_options.define('SWIFT_TOOL_SWIFT_SDK_DIGESTER_BUILD',
+                                          'FALSE')
+                llvm_cmake_options.define('SWIFT_TOOL_SOURCEKITD_TEST_BUILD', 'FALSE')
+                llvm_cmake_options.define('SWIFT_TOOL_SOURCEKITD_REPL_BUILD', 'FALSE')
+                llvm_cmake_options.define('SWIFT_TOOL_COMPLETE_TEST_BUILD', 'FALSE')
+                llvm_cmake_options.define('SWIFT_TOOL_SWIFT_REFLECTION_DUMP_BUILD',
+                                          'FALSE')
+
+            llvm_cmake_options.define('SWIFT_PATH_TO_CMARK_SOURCE:PATH',
+                                      os.path.join(self.source_dir, '../../cmark'))
+            llvm_cmake_options.define(
+                'SWIFT_PATH_TO_CMARK_BUILD:PATH',
+                os.path.join(self.build_dir, '../cmark-' + host_target))
+            llvm_cmake_options.define(
+                'SWIFT_PATH_TO_LIBDISPATCH_SOURCE:PATH',
+                os.path.join(self.source_dir,
+                             '../../swift-corelibs-libdispatch'))
+            llvm_cmake_options.define(
+                'SWIFT_PATH_TO_LIBDISPATCH_BUILD:PATH',
+                os.path.join(self.build_dir, '../libdispatch-' + host_target))
+
+            if self.args.stdlib_deployment_targets:
+                llvm_cmake_options.define('SWIFT_SDKS:STRING',
+                                          ';'.join(self.args.
+                                                   stdlib_deployment_targets))
+
+            add_swift_bool('SWIFT_STDLIB_ENABLE_OBJC_INTEROP', 'swift_objc_interop')
+
+            if getattr(self.args, 'swift_enable_reflection', None) == '0':
+                llvm_cmake_options.define('SWIFT_ENABLE_REFLECTION:BOOL', 'FALSE')
+
+            add_swift_string('SWIFT_PRIMARY_VARIANT_SDK')
+            add_swift_string('SWIFT_PRIMARY_VARIANT_ARCH')
+            add_swift_bool('SWIFT_STDLIB_STABLE_ABI')
+            add_swift_bool('SWIFT_STDLIB_ENABLE_PRESPECIALIZATION')
+            add_swift_bool('SWIFT_STDLIB_SUPPORTS_BACKTRACE_REPORTING')
+            add_swift_bool('SWIFT_STDLIB_HAS_ASL')
+            add_swift_bool('SWIFT_STDLIB_HAS_LOCALE')
+            add_swift_string('SWIFT_INSTALL_COMPONENTS')
+            add_swift_string('SWIFT_FREESTANDING_FLAVOR')
+            add_swift_string('SWIFT_FREESTANDING_SDK')
+            add_swift_string('SWIFT_FREESTANDING_TRIPLE_NAME')
+            add_swift_string('SWIFT_FREESTANDING_MODULE_NAME')
+
+            if getattr(self.args, 'swift_freestanding_archs', None):
+                llvm_cmake_options.define('SWIFT_FREESTANDING_ARCHS:STRING',
+                                          ';'.join(self.args.
+                                                   swift_freestanding_archs))
+
+            add_swift_bool('SWIFT_ENABLE_EXPERIMENTAL_STRING_PROCESSING')
+            add_swift_bool('SWIFT_BUILD_REGEX_PARSER_IN_COMPILER')
+            add_swift_bool('SWIFT_STDLIB_TRACING')
+            add_swift_bool('SWIFT_STDLIB_USE_RELATIVE_PROTOCOL_WITNESS_TABLES')
+            add_swift_bool('SWIFT_STDLIB_USE_FRAGILE_RESILIENT_PROTOCOL_WITNESS_TABLES')
+            add_swift_string('SWIFT_RUNTIME_FIXED_BACKTRACER_PATH')
+            add_swift_string('SWIFT_THREADING_PACKAGE')
+
+        if self.args.build_lldb:
+            # Incorporate LLDB CMake options from build-script-impl
+            # (lines 2132-2285)
+
+            def add_lldb_bool(cmake_var, arg_name=None):
+                arg_name = arg_name or cmake_var.lower()
+                val = getattr(self.args, arg_name, None)
+                if val is not None:
+                    llvm_cmake_options.define(cmake_var + ':BOOL', val)
+
+            def add_lldb_string(cmake_var, arg_name=None):
+                arg_name = arg_name or cmake_var.lower()
+                val = getattr(self.args, arg_name, None)
+                if val is not None and str(val) != "":
+                    llvm_cmake_options.define(cmake_var + ':STRING', str(val))
+
+            # Extra arguments
+            llvm_cmake_options.extend_raw(self.args.lldb_cmake_options)
+
+            # Pick the right cache.
+            if system() == 'Darwin':
+                cmake_cache = "Apple-lldb-macOS.cmake"
+            else:
+                cmake_cache = "Apple-lldb-Linux.cmake"
+
+            lldb_source_dir = os.path.join(self.source_dir, 'lldb')
+            llvm_cmake_options.extend_raw([
+                '-C', os.path.join(lldb_source_dir, 'cmake/caches', cmake_cache)
+            ])
+
+            add_lldb_string('LLDB_BUILD_TYPE', 'lldb_build_variant')
+            add_lldb_bool('LLDB_ASSERTIONS', 'lldb_assertions')
+
+            # LLDB_SWIFTC:PATH=${SWIFTC_BIN}
+            # We assume swiftc is in the same build directory if build_swift
+            if self.args.build_swift:
+                swift_build_dir = os.path.join(self.build_dir, '../swift-' + host_target)
+                llvm_cmake_options.define('LLDB_SWIFTC:PATH',
+                                          os.path.join(swift_build_dir, 'bin/swiftc'))
+                llvm_cmake_options.define('LLDB_SWIFT_LIBS:PATH',
+                                          os.path.join(swift_build_dir, 'lib/swift'))
+                llvm_cmake_options.define('Swift_DIR:PATH',
+                                          os.path.join(swift_build_dir, 'lib/cmake/swift'))
+
+            llvm_cmake_options.define('LLDB_ENABLE_CURSES', 'ON')
+            llvm_cmake_options.define('LLDB_ENABLE_LIBEDIT', 'ON')
+            llvm_cmake_options.define('LLDB_ENABLE_PYTHON', 'ON')
+            llvm_cmake_options.define('LLDB_ENABLE_LZMA', 'OFF')
+            llvm_cmake_options.define('LLDB_ENABLE_LUA', 'OFF')
+
+            if self.args.build_toolchain_only:
+                should_configure_tests = False
+            else:
+                should_configure_tests = getattr(self.args, 'lldb_configure_tests', True)
+            llvm_cmake_options.define('LLDB_INCLUDE_TESTS:BOOL', should_configure_tests)
+
+            if not self.is_cross_compile_target(host_target):
+                libcxx_build_dir = os.path.join(self.build_dir, '../libcxx-' + host_target)
+                llvm_cmake_options.define('LLDB_TEST_LIBCXX_ROOT_DIR:STRING',
+                                          libcxx_build_dir)
+
+            # Construct dotest arguments
+            lldb_build_dir = os.path.join(self.build_dir, '../lldb-' + host_target)
+            dotest_args = ["--build-dir",
+                           os.path.join(lldb_build_dir, 'lldb-test-build.noindex'),
+                           "--skip-category=watchpoint"]
+            if getattr(self.args, 'lldb_test_swift_only', False):
+                dotest_args.append("--skip-category=dwo")
+
+            llvm_cmake_options.define('LLDB_TEST_USER_ARGS', ';'.join(dotest_args))
+
+            if self.is_cross_compile_target(host_target):
+                llvm_cmake_options.define('LLDB_TABLEGEN', 'lldb-tblgen')
+                llvm_cmake_options.define('LLDB_TABLEGEN_EXE', 'lldb-tblgen')
+
+            add_lldb_bool('LLDB_USE_SYSTEM_DEBUGSERVER')
+            llvm_cmake_options.extend_raw(self.args.lldb_extra_cmake_args)
 
         # NOTE: This is not a dead option! It is relied upon for certain
         # bots/build-configs!
@@ -494,6 +747,15 @@ class LLVMCombined(cmake_product.CMakeProduct):
                                       confusable_chars_gen)
             llvm = os.path.join(host_build_dir, 'llvm')
             llvm_cmake_options.define('LLVM_NATIVE_BUILD', llvm)
+            if self.args.build_swift:
+                llvm_cmake_options.define('SWIFT_NATIVE_LLVM_TOOLS_PATH:STRING',
+                                          os.path.join(host_build_dir, 'bin'))
+                llvm_cmake_options.define('SWIFT_NATIVE_CLANG_TOOLS_PATH:STRING',
+                                          os.path.join(host_build_dir, 'bin'))
+                host_swift_build_dir = os.path.join(
+                    build_root, 'swift-{}'.format(host_machine_target))
+                llvm_cmake_options.define('SWIFT_NATIVE_SWIFT_TOOLS_PATH:STRING',
+                                          os.path.join(host_swift_build_dir, 'bin'))
 
         host_config = HostSpecificConfiguration(host_target, self.args)
 
@@ -515,8 +777,6 @@ class LLVMCombined(cmake_product.CMakeProduct):
         if self.args.build_llvm and system() == 'Darwin':
             self.copy_embedded_compiler_rt_builtins_from_darwin_host_toolchain(
                 self.build_dir)
-
-        raise ValueError("Check llvm build folder to check that this is reasonable")
 
     def _handle_cxx_headers(self, host_target, platform):
         # When we are building LLVM create symlinks to the c++ headers. We need
