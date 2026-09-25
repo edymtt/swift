@@ -656,8 +656,12 @@ class BuildScriptInvocation(object):
         # If --skip-build-llvm is passed in, LLVM cannot be completely disabled, as
         # Swift still needs a few LLVM targets like tblgen to be built for it to be
         # configured. Instead, handle this in the product for now.
-        builder.add_product(products.LLVM,
-                            is_enabled=self.args.build_llvm or self.args.build_swift or self.args.build_lldb)
+        if getattr(self.args, 'unified_llvm_build', False):
+            builder.add_product(products.LLVMCombined,
+                                is_enabled=self.args.build_llvm or self.args.build_swift or self.args.build_lldb)
+        else:
+            builder.add_product(products.LLVM,
+                                is_enabled=self.args.build_llvm or self.args.build_swift or self.args.build_lldb)
 
         builder.add_product(products.StaticSwiftLinuxConfig,
                             is_enabled=self.args.install_static_linux_config)
@@ -682,9 +686,9 @@ class BuildScriptInvocation(object):
         builder.add_impl_product(products.LibCXX,
                                  is_enabled=self.args.build_libcxx)
         builder.add_impl_product(products.Swift,
-                                 is_enabled=self.args.build_swift)
+                                 is_enabled=self.args.build_swift and not getattr(self.args, 'unified_llvm_build', False))
         builder.add_impl_product(products.LLDB,
-                                 is_enabled=self.args.build_lldb)
+                                 is_enabled=self.args.build_lldb and not getattr(self.args, 'unified_llvm_build', False))
         builder.add_impl_product(products.LibDispatch,
                                  is_enabled=self.args.build_libdispatch)
 

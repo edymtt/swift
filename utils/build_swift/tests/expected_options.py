@@ -753,6 +753,7 @@ EXPECTED_OPTIONS = [
     EnableOption('--clean-early-swift-driver', dest='clean_early_swift_driver'),
     EnableOption('--llvm-enable-modules'),
     EnableOption('--llvm-enable-index-store'),
+    EnableOption('--unified-llvm-build', dest='unified_llvm_build'),
     EnableOption('--build-llvm', dest='_build_llvm'),
 
     DisableOption('--skip-build-cmark', dest='build_cmark'),

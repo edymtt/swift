@@ -1691,6 +1691,9 @@ def create_argument_parser():
            help='skip building cmark')
     option('--skip-build-llvm', toggle_false('build_llvm'),
            help='skip building llvm')
+    option('--unified-llvm-build', toggle_true('unified_llvm_build'),
+           default=False,
+           help='use unified CMake build for LLVM, Swift, and LLDB')
     option('--build-llvm', toggle_true('_build_llvm'),
            default=True,
            help='build llvm and clang')

@@ -23,7 +23,7 @@ from ..host_specific_configuration \
     import HostSpecificConfiguration
 
 
-class LLVM(cmake_product.CMakeProduct):
+class LLVMCombined(cmake_product.CMakeProduct):
 
     def __init__(self, args, toolchain, source_dir, build_dir):
         cmake_product.CMakeProduct.__init__(self, args, toolchain, source_dir,
@@ -97,7 +97,7 @@ class LLVM(cmake_product.CMakeProduct):
         return [cmark.CMark]
 
     def llvm_c_flags(self, platform, arch):
-        result = self.common_cross_c_flags(platform, arch, include_arch=True)
+        result = self.common_cross_c_flags(platform, arch, include_arch=False)
         if self.is_debug_info():
             if self.args.lto_type:
                 result.append('-gline-tables-only')
@@ -284,6 +284,8 @@ class LLVM(cmake_product.CMakeProduct):
         llvm_c_flags = ' '.join(self.llvm_c_flags(platform, arch))
         llvm_cmake_options.define('CMAKE_C_FLAGS', llvm_c_flags)
         llvm_cmake_options.define('CMAKE_CXX_FLAGS', llvm_c_flags)
+        llvm_cmake_options.define('CMAKE_C_COMPILER_TARGET', self.target_for_platform(platform, arch, include_version=True))
+        llvm_cmake_options.define('CMAKE_CXX_COMPILER_TARGET', self.target_for_platform(platform, arch, include_version=True))
         llvm_cmake_options.define('CMAKE_C_FLAGS_RELWITHDEBINFO', '-O2 -DNDEBUG')
         llvm_cmake_options.define('CMAKE_CXX_FLAGS_RELWITHDEBINFO', '-O2 -DNDEBUG')
         llvm_cmake_options.define('CMAKE_BUILD_TYPE:STRING',
@@ -349,7 +351,7 @@ class LLVM(cmake_product.CMakeProduct):
                 'COMPILER_RT_FORCE_BUILD_BAREMETAL_MACHO_BUILTINS_ARCHS:'
                 'STRING', 'armv6 armv6m armv7 armv7m armv7em armv8m.main armv8.1m.main')
 
-        llvm_enable_projects = ['clang']
+        llvm_enable_projects = ['clang'] #, 'lldb']
         llvm_enable_runtimes = []
 
         if self.args.build_compiler_rt and \
@@ -378,6 +380,15 @@ class LLVM(cmake_product.CMakeProduct):
                                   ';'.join(llvm_enable_projects))
         llvm_cmake_options.define('LLVM_ENABLE_RUNTIMES',
                                   ';'.join(llvm_enable_runtimes))
+        #llvm_cmake_options.define('LLVM_EXTERNAL_PROJECTS',
+        #                          'swift')
+        llvm_cmake_options.define('LLVM_EXTERNAL_SWIFT_SOURCE_DIR',
+                                  os.path.join(self.source_dir, '../../swift'))
+        llvm_cmake_options.define('cmark-gfm_DIR',
+                                '../../build/buildbot_incremental_unified_llvm/cmark-install/usr/local/lib/cmake')
+                                #  os.path.join(self.build_dir, '../cmark-macosx-arm64'))
+        llvm_cmake_options.define('SWIFT_PATH_TO_STRING_PROCESSING_SOURCE',
+                                  os.path.join(self.source_dir, '../../swift-experimental-string-processing '))
 
         # NOTE: This is not a dead option! It is relied upon for certain
         # bots/build-configs!
@@ -452,6 +463,8 @@ class LLVM(cmake_product.CMakeProduct):
         if self.args.build_llvm and system() == 'Darwin':
             self.copy_embedded_compiler_rt_builtins_from_darwin_host_toolchain(
                 self.build_dir)
+
+        raise ValueError("Check llvm build folder to check that this is reasonable")
 
     def _handle_cxx_headers(self, host_target, platform):
         # When we are building LLVM create symlinks to the c++ headers. We need
