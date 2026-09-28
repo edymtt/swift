@@ -74,6 +74,10 @@ class LLVMCombined(cmake_product.CMakeProduct):
                     self.cmake_options.extend_raw([option])
 
     @classmethod
+    def product_source_name(cls):
+        return "llvm-project/llvm"
+
+    @classmethod
     def is_build_script_impl_product(cls):
         """is_build_script_impl_product -> bool
 
