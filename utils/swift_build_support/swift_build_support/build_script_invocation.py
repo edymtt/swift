@@ -313,12 +313,16 @@ class BuildScriptInvocation(object):
         # Then add subproject install flags that either skip building them /or/
         # if we are going to build them and install_all is set, we also install
         # them.
+        build_swift = args.build_swift and not getattr(
+            self.args, 'unified_llvm_build', False)
+        build_lldb = args.build_lldb and not getattr(
+            self.args, 'unified_llvm_build', False)
         conditional_subproject_configs = [
             (args.build_llvm, "llvm"),
-            (args.build_swift, "swift"),
+            (build_swift, "swift"),
             (args.build_foundation, "foundation"),
             (args.build_xctest, "xctest"),
-            (args.build_lldb, "lldb"),
+            (build_lldb, "lldb"),
             (args.build_llbuild, "llbuild"),
             (args.build_libcxx, "libcxx"),
             (args.build_libdispatch, "libdispatch"),
@@ -672,12 +676,8 @@ class BuildScriptInvocation(object):
         # If --skip-build-llvm is passed in, LLVM cannot be completely disabled, as
         # Swift still needs a few LLVM targets like tblgen to be built for it to be
         # configured. Instead, handle this in the product for now.
-        if getattr(self.args, 'unified_llvm_build', False):
-            builder.add_product(products.LLVMCombined,
-                                is_enabled=self.args.build_llvm or self.args.build_swift or self.args.build_lldb)
-        else:
-            builder.add_product(products.LLVM,
-                                is_enabled=self.args.build_llvm or self.args.build_swift or self.args.build_lldb)
+        builder.add_product(products.LLVM,
+                            is_enabled=self.args.build_llvm or self.args.build_swift or self.args.build_lldb)
 
         builder.add_product(products.StaticSwiftLinuxConfig,
                             is_enabled=self.args.install_static_linux_config)
@@ -702,9 +702,9 @@ class BuildScriptInvocation(object):
         builder.add_impl_product(products.LibCXX,
                                  is_enabled=self.args.build_libcxx)
         builder.add_impl_product(products.Swift,
-                                 is_enabled=self.args.build_swift and not getattr(self.args, 'unified_llvm_build', False))
+                                 is_enabled=self.args.build_swift)
         builder.add_impl_product(products.LLDB,
-                                 is_enabled=self.args.build_lldb and not getattr(self.args, 'unified_llvm_build', False))
+                                 is_enabled=self.args.build_lldb)
         builder.add_impl_product(products.LibDispatch,
                                  is_enabled=self.args.build_libdispatch)
 
