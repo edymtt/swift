@@ -601,9 +601,8 @@ class SwiftTestCase(unittest.TestCase):
             toolchain=self.toolchain,
             source_dir='/path/to/src',
             build_dir='/path/to/build')
-        self.assertIn(
-            '-DSWIFT_PEDANTIC_DIAGNOSTICS:BOOL=TRUE',
-            swift.cmake_options)
+        self.assertIn('-DSWIFT_PEDANTIC_DIAGNOSTICS:BOOL=TRUE',
+                      swift.cmake_options)
 
         self.args.swift_pedantic_diagnostics = False
         swift = Swift(
@@ -611,9 +610,20 @@ class SwiftTestCase(unittest.TestCase):
             toolchain=self.toolchain,
             source_dir='/path/to/src',
             build_dir='/path/to/build')
-        self.assertIn(
-            '-DSWIFT_PEDANTIC_DIAGNOSTICS:BOOL=FALSE',
-            swift.cmake_options)
+        self.assertIn('-DSWIFT_PEDANTIC_DIAGNOSTICS:BOOL=FALSE',
+                      swift.cmake_options)
+
+    def test_swift_noop_with_unified_llvm_build(self):
+        self.args.unified_llvm_build = True
+        swift = Swift(
+            args=self.args,
+            toolchain=self.toolchain,
+            source_dir=os.path.join(self.workspace.source_root, 'swift'),
+            build_dir=os.path.join(self.workspace.build_root, 'swift'))
+        self.assertFalse(swift.should_build('macosx-x86_64'))
+        self.assertFalse(swift.should_test('macosx-x86_64'))
+        self.assertFalse(swift.should_install('macosx-x86_64'))
+
 
     def test_caching_flags(self):
         self.args.enable_caching = True

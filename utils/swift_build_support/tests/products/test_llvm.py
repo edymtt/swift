@@ -226,3 +226,89 @@ class LLVMTestCase(unittest.TestCase):
         llvm_opts, swift_opts, _ = llvm.host_cmake_options('linux-x86_64')
         self.assertIn('-DLLVM_ENABLE_INDEX_STORE:BOOL=FALSE', llvm_opts)
         self.assertIn('-DLLVM_ENABLE_INDEX_STORE:BOOL=FALSE', swift_opts)
+
+    def test_llvm_unified_without_swift(self):
+        self.args.unified_llvm_build = True
+        self.args.build_swift = False
+        llvm = LLVM(
+            args=self.args,
+            toolchain=self.toolchain,
+            source_dir=os.path.join(self.workspace.source_root, 'llvm'),
+            build_dir=os.path.join(self.workspace.build_root, 'llvm'))
+
+        self.assertNotIn('-DSWIFT_VENDOR=Apple', llvm.cmake_options)
+        self.assertNotIn('-DSWIFT_VERSION=5.0', llvm.cmake_options)
+
+    def test_llvm_unified_with_swift(self):
+        self.args.unified_llvm_build = True
+        self.args.build_swift = True
+        self.args.compiler_vendor = 'apple'
+        self.args.swift_user_visible_version = '6.0'
+        self.args.swift_compiler_version = '6.0.1'
+        self.args.clang_compiler_version = '15.0.0'
+        # Add necessary args for Swift product initialization
+        self.args.benchmark = True
+        self.args.benchmark_num_onone_iterations = 3
+        self.args.benchmark_num_o_iterations = 3
+        self.args.enable_tsan_runtime = False
+        self.args.force_optimized_typechecker = False
+        self.args.enable_stdlibcore_exclusivity_checking = False
+        self.args.enable_experimental_differentiable_programming = False
+        self.args.enable_experimental_concurrency = False
+        self.args.enable_experimental_cxx_interop = False
+        self.args.enable_experimental_distributed = False
+        self.args.swift_enable_backtracing = False
+        self.args.enable_experimental_observation = False
+        self.args.enable_experimental_parser_validation = False
+        self.args.swift_pedantic_diagnostics = False
+        self.args.enable_synchronization = False
+        self.args.enable_volatile = False
+        self.args.enable_runtime_module = False
+        self.args.build_swift_stdlib_static_print = False
+        self.args.build_swift_stdlib_unicode_data = True
+        self.args.build_embedded_stdlib = True
+        self.args.build_embedded_stdlib_cross_compiling = False
+        self.args.swift_freestanding_is_darwin = False
+        self.args.build_swift_private_stdlib = True
+        self.args.swift_tools_ld64_lto_codegen_only_for_supporting_targets = False
+        self.args.build_stdlib_docs = False
+        self.args.swift_debuginfo_non_lto_args = None
+        self.args.enable_new_runtime_build = False
+        self.args.darwin_test_deployment_version_osx = "10.9"
+        self.args.darwin_test_deployment_version_ios = "15.0"
+        self.args.darwin_test_deployment_version_tvos = "14.0"
+        self.args.darwin_test_deployment_version_watchos = "6.0"
+        self.args.darwin_test_deployment_version_xros = "1.0"
+        self.args.enable_caching = False
+        self.args.extra_swift_cmake_options = []
+
+        # Create swift source dir
+        os.makedirs(os.path.join(self.workspace.source_root, 'swift'),
+                    exist_ok=True)
+
+        llvm = LLVM(
+            args=self.args,
+            toolchain=self.toolchain,
+            source_dir=os.path.join(self.workspace.source_root, 'llvm'),
+            build_dir=os.path.join(self.workspace.build_root, 'llvm'))
+
+        # Check merged vendor flags
+        self.assertIn('-DSWIFT_VENDOR=Apple', llvm.cmake_options)
+        self.assertIn('-DSWIFT_VERSION=6.0', llvm.cmake_options)
+
+        # Check merged version flags
+        self.assertIn('-DCLANG_COMPILER_VERSION=15.0.0', llvm.cmake_options)
+        self.assertIn('-DSWIFT_COMPILER_VERSION=6.0.1', llvm.cmake_options)
+        self.assertIn('-DSWIFT_TOOLCHAIN_VERSION=swiftlang-6.0.1',
+                      llvm.cmake_options)
+
+        # Check filtered flags from Swift product (e.g. benchmarks)
+        self.assertIn('-DSWIFT_BENCHMARK_NUM_ONONE_ITERATIONS=3',
+                      llvm.cmake_options)
+
+        # Ensure no redundant -DSWIFT_VENDOR from Swift product's raw options
+        swift_vendor_count = 0
+        for opt in llvm.cmake_options:
+            if '-DSWIFT_VENDOR=' in opt:
+                swift_vendor_count += 1
+        self.assertEqual(swift_vendor_count, 1)
