@@ -375,3 +375,18 @@ updated without updating swift.py?")
                 llvm.LLVM,
                 staticswiftlinux.StaticSwiftLinuxConfig,
                 libcxx.LibCXX]
+
+    def should_build(self, host_target):
+        if getattr(self.args, 'unified_llvm_build', False):
+            return False
+        return True
+
+    def should_test(self, host_target):
+        if getattr(self.args, 'unified_llvm_build', False):
+            return False
+        return True
+
+    def should_install(self, host_target):
+        if getattr(self.args, 'unified_llvm_build', False):
+            return False
+        return True
