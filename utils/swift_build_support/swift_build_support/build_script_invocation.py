@@ -315,14 +315,12 @@ class BuildScriptInvocation(object):
         # them.
         build_swift = args.build_swift and not getattr(
             self.args, 'unified_llvm_build', False)
-        build_lldb = args.build_lldb and not getattr(
-            self.args, 'unified_llvm_build', False)
         conditional_subproject_configs = [
             (args.build_llvm, "llvm"),
             (build_swift, "swift"),
             (args.build_foundation, "foundation"),
             (args.build_xctest, "xctest"),
-            (build_lldb, "lldb"),
+            (args.build_lldb, "lldb"),
             (args.build_llbuild, "llbuild"),
             (args.build_libcxx, "libcxx"),
             (args.build_libdispatch, "libdispatch"),
@@ -497,10 +495,6 @@ class BuildScriptInvocation(object):
 
         if args.lit_args:
             impl_args += ["--llvm-lit-args=%s" % args.lit_args]
-
-        if args.lldb_test_swift_compatibility:
-            impl_args += ["--lldb-test-swift-compatibility",
-                          args.lldb_test_swift_compatibility]
 
         if args.coverage_db:
             impl_args += [

@@ -40,18 +40,3 @@ class LLDB(product.Product):
                 llvm.LLVM,
                 libcxx.LibCXX,
                 swift.Swift]
-
-    def should_build(self, host_target):
-        if getattr(self.args, 'unified_llvm_build', False):
-            return False
-        return True
-
-    def should_test(self, host_target):
-        if getattr(self.args, 'unified_llvm_build', False):
-            return False
-        return True
-
-    def should_install(self, host_target):
-        if getattr(self.args, 'unified_llvm_build', False):
-            return False
-        return True

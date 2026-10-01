@@ -1139,10 +1139,6 @@ def create_argument_parser():
            const=False,
            help='disable assertions in LLDB')
 
-    option('--lldb-test-swift-compatibility', store,
-           type=str,
-           help='specify additional Swift compilers to test lldb with')
-
     option('--llbuild-assertions', store,
            const=True,
            help='enable assertions in llbuild')
@@ -1700,7 +1696,7 @@ def create_argument_parser():
            help='skip building llvm')
     option('--unified-llvm-build', toggle_true('unified_llvm_build'),
            default=False,
-           help='use unified CMake build for LLVM, Swift, and LLDB')
+           help='use unified CMake build for LLVM and Swift, and LLDB')
     option('--build-llvm', toggle_true('_build_llvm'),
            default=True,
            help='build llvm and clang')

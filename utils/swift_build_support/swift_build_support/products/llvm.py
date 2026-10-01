@@ -410,9 +410,6 @@ class LLVM(cmake_product.CMakeProduct):
                 'STRING', 'armv6 armv6m armv7 armv7m armv7em armv8m.main armv8.1m.main')
 
         llvm_enable_projects = ['clang']
-        if getattr(self.args, 'unified_llvm_build', False) and \
-           self.args.build_lldb:
-            llvm_enable_projects.append('lldb')
         llvm_enable_runtimes = []
 
         if self.args.build_compiler_rt and \
@@ -628,85 +625,6 @@ class LLVM(cmake_product.CMakeProduct):
             add_swift_string('SWIFT_RUNTIME_FIXED_BACKTRACER_PATH')
             add_swift_string('SWIFT_THREADING_PACKAGE')
 
-        if getattr(self.args, 'unified_llvm_build', False) and \
-           self.args.build_lldb:
-            # Incorporate LLDB CMake options from build-script-impl
-            # (lines 2132-2285)
-
-            def add_lldb_bool(cmake_var, arg_name=None):
-                arg_name = arg_name or cmake_var.lower()
-                val = getattr(self.args, arg_name, None)
-                if val is not None:
-                    llvm_cmake_options.define(cmake_var + ':BOOL', val)
-
-            def add_lldb_string(cmake_var, arg_name=None):
-                arg_name = arg_name or cmake_var.lower()
-                val = getattr(self.args, arg_name, None)
-                if val is not None and str(val) != "":
-                    llvm_cmake_options.define(cmake_var + ':STRING', str(val))
-
-            # Extra arguments
-            llvm_cmake_options.extend_raw(self.args.lldb_cmake_options)
-
-            # Pick the right cache.
-            if system() == 'Darwin':
-                cmake_cache = "Apple-lldb-macOS.cmake"
-            else:
-                cmake_cache = "Apple-lldb-Linux.cmake"
-
-            lldb_source_dir = os.path.join(self.source_dir, 'lldb')
-            llvm_cmake_options.extend_raw([
-                '-C', os.path.join(lldb_source_dir, 'cmake/caches', cmake_cache)
-            ])
-
-            add_lldb_string('LLDB_BUILD_TYPE', 'lldb_build_variant')
-            add_lldb_bool('LLDB_ASSERTIONS', 'lldb_assertions')
-
-            # LLDB_SWIFTC:PATH=${SWIFTC_BIN}
-            # We assume swiftc is in the same build directory if build_swift
-            if self.args.build_swift:
-                swift_build_dir = os.path.join(self.build_dir, '../swift-' + host_target)
-                llvm_cmake_options.define('LLDB_SWIFTC:PATH',
-                                          os.path.join(swift_build_dir, 'bin/swiftc'))
-                llvm_cmake_options.define('LLDB_SWIFT_LIBS:PATH',
-                                          os.path.join(swift_build_dir, 'lib/swift'))
-                llvm_cmake_options.define('Swift_DIR:PATH',
-                                          os.path.join(swift_build_dir, 'lib/cmake/swift'))
-
-            llvm_cmake_options.define('LLDB_ENABLE_CURSES', 'ON')
-            llvm_cmake_options.define('LLDB_ENABLE_LIBEDIT', 'ON')
-            llvm_cmake_options.define('LLDB_ENABLE_PYTHON', 'ON')
-            llvm_cmake_options.define('LLDB_ENABLE_LZMA', 'OFF')
-            llvm_cmake_options.define('LLDB_ENABLE_LUA', 'OFF')
-
-            if self.args.build_toolchain_only:
-                should_configure_tests = False
-            else:
-                should_configure_tests = getattr(self.args, 'lldb_configure_tests', True)
-            llvm_cmake_options.define('LLDB_INCLUDE_TESTS:BOOL', should_configure_tests)
-
-            if not self.is_cross_compile_target(host_target):
-                libcxx_build_dir = os.path.join(self.build_dir, '../libcxx-' + host_target)
-                llvm_cmake_options.define('LLDB_TEST_LIBCXX_ROOT_DIR:STRING',
-                                          libcxx_build_dir)
-
-            # Construct dotest arguments
-            lldb_build_dir = os.path.join(self.build_dir, '../lldb-' + host_target)
-            dotest_args = ["--build-dir",
-                           os.path.join(lldb_build_dir, 'lldb-test-build.noindex'),
-                           "--skip-category=watchpoint"]
-            if getattr(self.args, 'lldb_test_swift_only', False):
-                dotest_args.append("--skip-category=dwo")
-
-            llvm_cmake_options.define('LLDB_TEST_USER_ARGS', ';'.join(dotest_args))
-
-            if self.is_cross_compile_target(host_target):
-                llvm_cmake_options.define('LLDB_TABLEGEN', 'lldb-tblgen')
-                llvm_cmake_options.define('LLDB_TABLEGEN_EXE', 'lldb-tblgen')
-
-            add_lldb_bool('LLDB_USE_SYSTEM_DEBUGSERVER')
-            llvm_cmake_options.extend_raw(self.args.lldb_extra_cmake_args)
-
         # NOTE: This is not a dead option! It is relied upon for certain
         # bots/build-configs!
         #
@@ -865,9 +783,6 @@ class LLVM(cmake_product.CMakeProduct):
             if self.args.benchmark:
                 return True
 
-        if self.args.build_lldb and self.args.test:
-            return True
-
         return False
 
     def test(self, host_target):
@@ -897,71 +812,6 @@ class LLVM(cmake_product.CMakeProduct):
             if results_targets:
                 self.test_with_cmake(executable_target, results_targets,
                                      self.args.llvm_build_variant, [])
-
-        # 2. LLDB tests
-        if self.args.build_lldb and self.args.test:
-            results_dir = os.path.join(self.build_dir, 'lldb-test-results')
-            shell.makedirs(results_dir)
-
-            lit_args = []
-            if self.args.lit_args:
-                lit_args.extend(shlex.split(self.args.lit_args))
-
-            lit_args.append('--xunit-xml-output={}/results.xml'.format(results_dir))
-
-            # ASAN adjustment
-            is_asan = self.args.enable_asan or \
-                (self.args.lldb_extra_cmake_args and
-                 any("Address" in arg for arg in self.args.lldb_extra_cmake_args))
-
-            if is_asan:
-                phys_cpu = 0
-                if system() == 'Darwin':
-                    try:
-                        phys_cpu = int(shell.capture(
-                            ['sysctl', '-n', 'hw.physicalcpu'],
-                            dry_run=False).strip())
-                    except Exception:
-                        pass
-                if phys_cpu == 0:
-                    phys_cpu = multiprocessing.cpu_count()
-
-                lit_jobs = self.args.lit_jobs
-                limit = int(phys_cpu / 1.5)
-                jobs = min(lit_jobs, limit)
-                lit_args.extend(['-j', str(jobs)])
-            else:
-                lit_args.extend(['-j', str(self.args.lit_jobs)])
-
-            lit_filter_args = []
-            if getattr(self.args, 'lldb_test_swift_only', False):
-                lit_filter_args.append("--filter=[sS]wift")
-
-            print("--- Running LLDB unit tests ---")
-            self.build_with_cmake(['unittests/LLDBUnitTests'],
-                                  self.args.llvm_build_variant, [])
-
-            print("--- Running LLDB tests ---")
-            self.build_with_cmake(['lldb-test-deps'],
-                                  self.args.llvm_build_variant, [])
-
-            llvm_lit = os.path.join(self.build_dir, 'bin', 'llvm-lit')
-            lldb_test_dir = os.path.join(self.source_dir, 'lldb', 'test')
-
-            with shell.pushd(results_dir):
-                shell.call([llvm_lit, lldb_test_dir] + lit_args + lit_filter_args)
-
-            if getattr(self.args, 'lldb_test_swift_compatibility', None) and \
-               os.access(self.args.lldb_test_swift_compatibility, os.X_OK):
-                print("Running LLDB swift compatibility tests against {}".format(
-                    self.args.lldb_test_swift_compatibility))
-                dotest_args = ("-G swift-history --swift-compiler \"{}\""
-                               .format(self.args.lldb_test_swift_compatibility))
-                compat_lit_args = lit_args + [
-                    '--param', 'dotest-args={}'.format(dotest_args),
-                    '--filter=compat']
-                with shell.pushd(results_dir):
-                    shell.call([llvm_lit, lldb_test_dir] + compat_lit_args)
 
     def should_install(self, host_target):
         """should_install() -> Bool
