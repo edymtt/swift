@@ -601,8 +601,9 @@ class SwiftTestCase(unittest.TestCase):
             toolchain=self.toolchain,
             source_dir='/path/to/src',
             build_dir='/path/to/build')
-        self.assertIn('-DSWIFT_PEDANTIC_DIAGNOSTICS:BOOL=TRUE',
-                      swift.cmake_options)
+        self.assertIn(
+            '-DSWIFT_PEDANTIC_DIAGNOSTICS:BOOL=TRUE',
+            swift.cmake_options)
 
         self.args.swift_pedantic_diagnostics = False
         swift = Swift(
@@ -610,8 +611,9 @@ class SwiftTestCase(unittest.TestCase):
             toolchain=self.toolchain,
             source_dir='/path/to/src',
             build_dir='/path/to/build')
-        self.assertIn('-DSWIFT_PEDANTIC_DIAGNOSTICS:BOOL=FALSE',
-                      swift.cmake_options)
+        self.assertIn(
+            '-DSWIFT_PEDANTIC_DIAGNOSTICS:BOOL=FALSE',
+            swift.cmake_options)
 
     def test_swift_noop_with_unified_llvm_build(self):
         self.args.unified_llvm_build = True

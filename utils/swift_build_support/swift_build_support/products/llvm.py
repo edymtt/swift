@@ -148,8 +148,7 @@ class LLVM(cmake_product.CMakeProduct):
     def get_dependencies(cls):
         return [cmark.CMark,
                 earlyswiftdriver.EarlySwiftDriver,
-                staticswiftlinux.StaticSwiftLinuxConfig,
-                libcxx.LibCXX]
+                staticswiftlinux.StaticSwiftLinuxConfig]
 
     def llvm_c_flags(self, platform, arch):
         include_arch = not getattr(self.args, 'unified_llvm_build', False)
