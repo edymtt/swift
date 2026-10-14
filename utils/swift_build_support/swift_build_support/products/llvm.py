@@ -274,6 +274,8 @@ class LLVM(cmake_product.CMakeProduct):
         Perform the build, for a non-build-script-impl product.
         """
 
+        host_config = HostSpecificConfiguration(host_target, self.args)
+
         (platform, arch) = host_target.split('-')
 
         llvm_cmake_options, _, relevant_options = self.host_cmake_options(host_target)
@@ -588,10 +590,10 @@ class LLVM(cmake_product.CMakeProduct):
                 'SWIFT_PATH_TO_LIBDISPATCH_BUILD:PATH',
                 os.path.join(self.build_dir, '../libdispatch-' + host_target))
 
-            if self.args.stdlib_deployment_targets:
+            if host_config.sdks_to_configure:
                 llvm_cmake_options.define('SWIFT_SDKS:STRING',
-                                          ';'.join(self.args.
-                                                   stdlib_deployment_targets))
+                                          ';'.join(sorted(
+                                              host_config.sdks_to_configure)))
 
             add_swift_bool('SWIFT_STDLIB_ENABLE_OBJC_INTEROP', 'swift_objc_interop')
 
@@ -623,6 +625,12 @@ class LLVM(cmake_product.CMakeProduct):
             add_swift_bool('SWIFT_STDLIB_USE_FRAGILE_RESILIENT_PROTOCOL_WITNESS_TABLES')
             add_swift_string('SWIFT_RUNTIME_FIXED_BACKTRACER_PATH')
             add_swift_string('SWIFT_THREADING_PACKAGE')
+
+            build_targets.extend(host_config.swift_stdlib_build_targets)
+            build_targets.extend(host_config.swift_libexec_build_targets)
+            if self.args.build_benchmarks and \
+               not self.is_cross_compile_target(host_target):
+                build_targets.extend(host_config.swift_benchmark_build_targets)
 
         # NOTE: This is not a dead option! It is relied upon for certain
         # bots/build-configs!
@@ -676,8 +684,6 @@ class LLVM(cmake_product.CMakeProduct):
                                       confusable_chars_gen)
             llvm = os.path.join(host_build_dir, 'llvm')
             llvm_cmake_options.define('LLVM_NATIVE_BUILD', llvm)
-
-        host_config = HostSpecificConfiguration(host_target, self.args)
 
         self.cmake_options.extend(host_config.cmake_options)
         self.cmake_options.extend(llvm_cmake_options)
