@@ -443,11 +443,11 @@ class LLVM(cmake_product.CMakeProduct):
         if getattr(self.args, 'unified_llvm_build', False) and \
            self.args.build_swift:
             llvm_cmake_options.define('LLVM_EXTERNAL_PROJECTS',
-                                      'swift')
+                                      'swift;cmark')
             llvm_cmake_options.define('LLVM_EXTERNAL_SWIFT_SOURCE_DIR',
                                       os.path.join(self.source_dir, '../../swift'))
-            llvm_cmake_options.define('cmark-gfm_DIR',
-                                      os.path.join(self.build_dir, '../cmark-install/usr/local/lib/cmake'))
+            llvm_cmake_options.define('LLVM_EXTERNAL_CMARK_SOURCE_DIR',
+                                      os.path.join(self.source_dir, '../../cmark'))
             llvm_cmake_options.define('SWIFT_PATH_TO_STRING_PROCESSING_SOURCE',
                                       os.path.join(self.source_dir, '../../swift-experimental-string-processing '))
 
@@ -577,11 +577,6 @@ class LLVM(cmake_product.CMakeProduct):
                 llvm_cmake_options.define('SWIFT_TOOL_SWIFT_REFLECTION_DUMP_BUILD',
                                           'FALSE')
 
-            llvm_cmake_options.define('SWIFT_PATH_TO_CMARK_SOURCE:PATH',
-                                      os.path.join(self.source_dir, '../../cmark'))
-            llvm_cmake_options.define(
-                'SWIFT_PATH_TO_CMARK_BUILD:PATH',
-                os.path.join(self.build_dir, '../cmark-' + host_target))
             llvm_cmake_options.define(
                 'SWIFT_PATH_TO_LIBDISPATCH_SOURCE:PATH',
                 os.path.join(self.source_dir,
