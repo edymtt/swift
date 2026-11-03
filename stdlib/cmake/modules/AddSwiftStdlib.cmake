@@ -1381,7 +1381,6 @@ function(add_swift_target_library_single target name)
          ${SWIFTLIB_INCORPORATED_OBJECT_LIBRARIES_EXPRESSIONS_SHARED_ONLY})
   endif()
 
-  message(STATUS "DEBUG== CMAKE_OSX_ARCHITECTURES ${CMAKE_OSX_ARCHITECTURES}")
   add_library("${target}" ${libkind}
               ${SWIFTLIB_SINGLE_SOURCES}
               ${SWIFTLIB_SINGLE_EXTERNAL_SOURCES}
@@ -4065,14 +4064,15 @@ function(embedded_amend_archive_commands_on_darwin_host target triple)
   # on the Embedded stdlib to the Runtime build system, where each platform
   # is built by a separate CMake invocation, thus allowing to set the archiver
   # properly in the toolchain file.
-  if(SWIFT_HOST_VARIANT STREQUAL "macosx" AND SWIFT_EMBEDDED_STDLIB_ARCHIVER_FOR_NON_DARWIN_PLATFORMS_UNDER_MACOS)
+  if(SWIFT_HOST_VARIANT STREQUAL "macosx"
+     AND (TARGET llvm-ar OR SWIFT_EMBEDDED_STDLIB_ARCHIVER_FOR_NON_DARWIN_PLATFORMS_UNDER_MACOS))
     if(triple MATCHES "-elf$" OR triple MATCHES "-eabi$" OR triple MATCHES "-wasm$")
       # There is no way to change the archive commands only for a few targets, so
-      # we resort going double work (and assume the previous commands exit successfully)
+      # we resort doing double work (and assume the previous commands exit successfully)
       add_custom_command(TARGET ${target}
         POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E rm $<TARGET_FILE:${target}>
-        COMMAND ${SWIFT_EMBEDDED_STDLIB_ARCHIVER_FOR_NON_DARWIN_PLATFORMS_UNDER_MACOS}
+        COMMAND "$<IF:$<TARGET_EXISTS:llvm-ar>,$<TARGET_FILE:llvm-ar>;crsU,${SWIFT_EMBEDDED_STDLIB_ARCHIVER_FOR_NON_DARWIN_PLATFORMS_UNDER_MACOS}>"
           $<TARGET_FILE:${target}>
           "$<JOIN:$<TARGET_PROPERTY:${target},STATIC_LIBRARY_OPTIONS>,;>"
           "$<JOIN:$<TARGET_OBJECTS:${target}>,;>"
