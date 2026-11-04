@@ -30,7 +30,8 @@ function(add_swift_unittest test_dirname)
 
   # *NOTE* Even though "add_unittest" does not have llvm in its name, it is a
   # function defined by AddLLVM.cmake.
-  add_unittest(SwiftUnitTests ${test_dirname} ${ASU_UNPARSED_ARGUMENTS})
+  # We need to disable PCH reuse since Swift may be building with sized deallaction but Clang may not
+  add_unittest(SwiftUnitTests ${test_dirname} DISABLE_PCH_REUSE ${ASU_UNPARSED_ARGUMENTS})
 
   set_target_properties(${test_dirname} PROPERTIES LINKER_LANGUAGE CXX)
 
