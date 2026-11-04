@@ -315,6 +315,13 @@ class BuildScriptInvocation(object):
         # them.
         build_swift = args.build_swift and not getattr(
             self.args, 'unified_llvm_build', False)
+
+        # Forward --unified-llvm-build so that build-script-impl can locate
+        # Swift artifacts (Swift_DIR, LLDB_SWIFT_LIBS, LLDB_SWIFTC, ...) in
+        # the LLVM build directory instead of the non-existent standalone
+        # Swift build directory.
+        if getattr(self.args, 'unified_llvm_build', False):
+            impl_args += ["--unified-llvm-build"]
         conditional_subproject_configs = [
             (args.build_llvm, "llvm"),
             (build_swift, "swift"),

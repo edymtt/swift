@@ -158,6 +158,7 @@ KNOWN_SETTINGS=(
     ninja-cmake-options                           ""                "CMake options used for all ninja targets"
 
     ## Build ...
+    unified-llvm-build                            "0"             "use unified CMake build for LLVM and Swift, and LLDB"
     build-llvm                                    "1"               "set to 1 to build LLVM and Clang"
     build-sil-debugging-stdlib                    "0"               "set to 1 to build the Swift standard library with -sil-based-debuginfo to enable debugging and profiling on SIL level"
     build-swift-clang-overlays                    "1"               "set to 1 to build the Swift overlays for the clang builtin modules"
@@ -1671,6 +1672,11 @@ for host in "${ALL_HOSTS[@]}"; do
             echo "error: swiftc does not exist at the specified native tools path: ${SWIFTC_BIN}"
             exit 1
         fi
+    elif [[ "$(true_false "${UNIFIED_LLVM_BUILD}")" == "TRUE" ]] ; then
+        # With a unified LLVM build, Swift is built as an LLVM external
+        # project; there is no standalone Swift build directory and swiftc
+        # lives in the LLVM build directory.
+        SWIFTC_BIN="$(build_directory_bin ${LOCAL_HOST} llvm)/swiftc"
     else
         SWIFTC_BIN="$(build_directory_bin ${LOCAL_HOST} swift)/swiftc"
     fi
@@ -2152,8 +2158,20 @@ for host in "${ALL_HOSTS[@]}"; do
                 fi
                 cmark_build_dir=$(build_directory ${host} cmark)
                 lldb_build_dir=$(build_directory ${host} lldb)
-                swift_build_dir=$(build_directory ${host} swift)
                 libcxx_build_dir=$(build_directory ${host} libcxx)
+
+                # In a unified build, Swift is built as an LLVM external
+                # project and its artifacts live in the LLVM build directory;
+                # the standalone Swift build directory does not exist.  Point
+                # the LLDB build at the Swift artifacts in the LLVM build
+                # directory instead.
+                if [[ "$(true_false "${UNIFIED_LLVM_BUILD}")" == "TRUE" ]] ; then
+                    swift_build_dir="${llvm_build_dir}/tools/swift"
+                    swift_libs_dir="$(build_directory ${LOCAL_HOST} llvm)/lib/swift"
+                else
+                    swift_build_dir=$(build_directory ${host} swift)
+                    swift_libs_dir="$(build_directory ${LOCAL_HOST} swift)/lib/swift"
+                fi
 
                 # Add any lldb extra cmake arguments here.
 
@@ -2254,7 +2272,7 @@ for host in "${ALL_HOSTS[@]}"; do
                     -DCMAKE_CXX_FLAGS="$(llvm_c_flags ${host})"
                     -DCMAKE_BUILD_TYPE:STRING="${LLDB_BUILD_TYPE}"
                     -DLLDB_SWIFTC:PATH=${SWIFTC_BIN}
-                    -DLLDB_SWIFT_LIBS:PATH="$(build_directory ${LOCAL_HOST} swift)/lib/swift"
+                    -DLLDB_SWIFT_LIBS:PATH="${swift_libs_dir}"
                     -DCMAKE_INSTALL_PREFIX:PATH="$(get_host_install_prefix ${host})"
                     -DLLDB_FRAMEWORK_INSTALL_DIR="$(get_host_install_prefix ${host})../System/Library/PrivateFrameworks"
                     -DLLVM_DIR:PATH=${llvm_build_dir}/lib/cmake/llvm
@@ -2713,6 +2731,11 @@ for host in "${ALL_HOSTS[@]}"; do
 
     if [[ "${NATIVE_SWIFT_TOOLS_PATH}" ]] ; then
         SWIFTC_BIN="${NATIVE_SWIFT_TOOLS_PATH}/swiftc"
+    elif [[ "$(true_false "${UNIFIED_LLVM_BUILD}")" == "TRUE" ]] ; then
+        # With a unified LLVM build, Swift is built as an LLVM external
+        # project; there is no standalone Swift build directory and swiftc
+        # lives in the LLVM build directory.
+        SWIFTC_BIN="$(build_directory_bin ${LOCAL_HOST} llvm)/swiftc"
     else
         SWIFTC_BIN="$(build_directory_bin ${LOCAL_HOST} swift)/swiftc"
     fi
