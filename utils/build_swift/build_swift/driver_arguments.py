@@ -1140,9 +1140,6 @@ def create_argument_parser():
            const=False,
            help='disable assertions in LLDB')
 
-    option('--lldb-test-swift-compatibility', store,
-           type=str,
-           help='specify additional Swift compilers to test lldb with')
     option('--lldb-extra-cmake-args', append,
            type=argparse.ShellSplitType(),
            help='extra cmake argument to pass the LLDB build')

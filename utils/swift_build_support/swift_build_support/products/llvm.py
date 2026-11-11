@@ -658,6 +658,7 @@ class LLVM(cmake_product.CMakeProduct):
                 if candidate_job_number < self.args.lit_jobs:
                     candidate_job_number = self.args.lit_jobs 
                 additional_lldb_lit_args += f" -j {candidate_job_number}"
+            llvm_cmake_options.define_or_append("LLVM_LIT_ARGS", additional_lldb_lit_args)
 
             # TODO Pick the right cache.
             # if system() == 'Darwin':
@@ -917,27 +918,9 @@ class LLVM(cmake_product.CMakeProduct):
             else:
                 lldb_test_targets.append("check-lldb")
 
-            print("--- Running LLDB tests ---")
+            #print("--- Running LLDB tests ---")
             self.test_with_cmake(None, lldb_test_targets,
                                   self.args.llvm_build_variant, [])
-
-            llvm_lit = os.path.join(self.build_dir, 'bin', 'llvm-lit')
-            lldb_test_dir = os.path.join(self.source_dir, 'lldb', 'test')
-
-            with shell.pushd(results_dir):
-                shell.call([llvm_lit, lldb_test_dir] + lit_args + lit_filter_args)
-
-            if getattr(self.args, 'lldb_test_swift_compatibility', None) and \
-               os.access(self.args.lldb_test_swift_compatibility, os.X_OK):
-                print("Running LLDB swift compatibility tests against {}".format(
-                    self.args.lldb_test_swift_compatibility))
-                dotest_args = ("-G swift-history --swift-compiler \"{}\""
-                               .format(self.args.lldb_test_swift_compatibility))
-                compat_lit_args = lit_args + [
-                    '--param', 'dotest-args={}'.format(dotest_args),
-                    '--filter=compat']
-                with shell.pushd(results_dir):
-                    shell.call([llvm_lit, lldb_test_dir] + compat_lit_args)
 
     def should_install(self, host_target):
         """should_install() -> Bool

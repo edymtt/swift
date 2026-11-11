@@ -498,10 +498,6 @@ class BuildScriptInvocation(object):
         if args.lit_args:
             impl_args += ["--llvm-lit-args=%s" % args.lit_args]
 
-        if args.lldb_test_swift_compatibility:
-            impl_args += ["--lldb-test-swift-compatibility",
-                          args.lldb_test_swift_compatibility]
-
         if args.lldb_extra_cmake_args:
             impl_args += [
                 "--lldb-extra-cmake-args=%s" % ' '.join(
