@@ -557,6 +557,49 @@ class CMakeOptionsTestCase(unittest.TestCase):
         self.assertNotIn('-DFLAGS:STRING=a', options)
         self.assertNotIn('-DFLAGS=b', options)
 
+    def test_define_or_append(self):
+        options = CMakeOptions()
+
+        # Appending to an undefined option simply defines it.
+        options.define_or_append('LIT_FLAGS', '-v -j 12')
+        self.assertEqual(options.get('LIT_FLAGS'), '-v -j 12')
+
+        # ... and appending to an already defined option appends to its
+        # value, leaving other options untouched.
+        options.define_or_append('LIT_FLAGS', '--xunit-xml-output=results.xml')
+        self.assertEqual(options.get('LIT_FLAGS'),
+                         '-v -j 12 --xunit-xml-output=results.xml')
+
+        # Multiple appends accumulate.
+        options.define_or_append('LIT_FLAGS', '-vv')
+        self.assertEqual(options.get('LIT_FLAGS'),
+                         '-v -j 12 --xunit-xml-output=results.xml -vv')
+        self.assertEqual(list(options), [
+            '-DLIT_FLAGS=-v -j 12 --xunit-xml-output=results.xml -vv'])
+
+        # Appending to an option with an empty value does not add a
+        # leading space.
+        options.define('EMPTY', '')
+        options.define_or_append('EMPTY', 'value')
+        self.assertEqual(options.get('EMPTY'), 'value')
+
+        # Previous definitions of the same variable (typed or not) are
+        # removed, so the option is not defined twice.
+        options.define('FLAGS:STRING', 'a')
+        options.define('FLAGS', 'b')
+        self.assertEqual(options.get('FLAGS'), 'b')
+        options.define_or_append('FLAGS', 'c')
+        self.assertEqual(list(options).count('-DFLAGS=b c'), 1)
+        self.assertEqual(options.get('FLAGS'), 'b c')
+        self.assertNotIn('-DFLAGS:STRING=a', options)
+        self.assertNotIn('-DFLAGS=b', options)
+
+        # Variables with common prefixes are not confused.
+        options.define_or_append('LIT_FLAGS_EXTRA', 'extra')
+        self.assertEqual(options.get('LIT_FLAGS'),
+                         '-v -j 12 --xunit-xml-output=results.xml -vv')
+        self.assertEqual(options.get('LIT_FLAGS_EXTRA'), 'extra')
+
     def test_operations(self):
 
         options1 = CMakeOptions()

@@ -98,6 +98,26 @@ class CMakeOptions(object):
                          if not self._is_definition_of(option, var)]
         self.define(var, value)
 
+    def define_or_append(self, var, value):
+        """Append a value to an already defined cmake option in this object.
+
+        If the given cache entry is already defined, `value` is appended to
+        its current value, separated by a single space; otherwise this is
+        equivalent to `define(var, value)`.  In either case, previous
+        definitions of the same entry are removed, so that the option is
+        only defined once.
+
+        opts.define_or_append("FOO", "BAR")      # -> -DFOO=BAR
+        opts.define_or_append("FOO", "BAZ")      # -> -DFOO=BAR BAZ
+        """
+        try:
+            existing_value = self.get(var)
+        except KeyError:
+            existing_value = None
+        if existing_value:
+            value = '%s %s' % (existing_value, value)
+        self.define_or_replace(var, value)
+
     def undefine(self, var):
         """Utility to undefine cmake options in this object.
 
