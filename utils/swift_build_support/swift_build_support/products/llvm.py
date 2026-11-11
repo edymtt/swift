@@ -646,18 +646,29 @@ class LLVM(cmake_product.CMakeProduct):
                     llvm_cmake_options.define(cmake_var + ':STRING', str(val))
 
             # Extra arguments
-            #llvm_cmake_options.extend_raw(self.args.lldb_cmake_options)
+            additional_lldb_lit_args = f' --xunit-xml-output={os.path.join(self.build_dir, "lldb-test-results", "results.xml")}'
+            is_asan = self.args.enable_asan or \
+                (self.args.lldb_extra_cmake_args and
+                 any("Address" in arg for arg in self.args.lldb_extra_cmake_args))
+            if system() == "Darwin" and is_asan:
+                physicalcpu = int(shell.capture(["sysctl", "-n", "hw.physicalcpu"]).strip())
+                candidate_job_number= int(physicalcpu/3)
+                if candidate_job_number < 1:
+                    candidate_job_number = 1
+                if candidate_job_number < self.args.lit_jobs:
+                    candidate_job_number = self.args.lit_jobs 
+                additional_lldb_lit_args += f" -j {candidate_job_number}"
 
-            # Pick the right cache.
-            if system() == 'Darwin':
-                cmake_cache = "Apple-lldb-macOS.cmake"
-            else:
-                cmake_cache = "Apple-lldb-Linux.cmake"
+            # TODO Pick the right cache.
+            # if system() == 'Darwin':
+            #     cmake_cache = "Apple-lldb-macOS.cmake"
+            # else:
+            #     cmake_cache = "Apple-lldb-Linux.cmake"
 
-            lldb_source_dir = os.path.join(self.source_dir, 'lldb')
-            llvm_cmake_options.extend_raw([
-                '-C', os.path.join(lldb_source_dir, 'cmake/caches', cmake_cache)
-            ])
+            #lldb_source_dir = os.path.join(self.source_dir, 'lldb')
+            #llvm_cmake_options.extend_raw([
+            #    '-C', os.path.join(lldb_source_dir, 'cmake/caches', cmake_cache)
+            #])
 
             add_lldb_string('LLDB_BUILD_TYPE', 'lldb_build_variant')
             add_lldb_bool('LLDB_ASSERTIONS', 'lldb_assertions')
@@ -900,49 +911,14 @@ class LLVM(cmake_product.CMakeProduct):
 
         # 2. LLDB tests
         if self.args.build_lldb and self.args.test:
-            results_dir = os.path.join(self.build_dir, 'lldb-test-results')
-            shell.makedirs(results_dir)
-
-            lit_args = []
-            if self.args.lit_args:
-                lit_args.extend(shlex.split(self.args.lit_args))
-
-            lit_args.append('--xunit-xml-output={}/results.xml'.format(results_dir))
-
-            # ASAN adjustment
-            is_asan = self.args.enable_asan or \
-                (self.args.lldb_extra_cmake_args and
-                 any("Address" in arg for arg in self.args.lldb_extra_cmake_args))
-
-            if is_asan:
-                phys_cpu = 0
-                if system() == 'Darwin':
-                    try:
-                        phys_cpu = int(shell.capture(
-                            ['sysctl', '-n', 'hw.physicalcpu'],
-                            dry_run=False).strip())
-                    except Exception:
-                        pass
-                if phys_cpu == 0:
-                    phys_cpu = multiprocessing.cpu_count()
-
-                lit_jobs = self.args.lit_jobs
-                limit = int(phys_cpu / 1.5)
-                jobs = min(lit_jobs, limit)
-                lit_args.extend(['-j', str(jobs)])
-            else:
-                lit_args.extend(['-j', str(self.args.lit_jobs)])
-
-            lit_filter_args = []
+            lldb_test_targets = []
             if getattr(self.args, 'lldb_test_swift_only', False):
-                lit_filter_args.append("--filter=[sS]wift")
-
-            print("--- Running LLDB unit tests ---")
-            self.build_with_cmake(['unittests/LLDBUnitTests'],
-                                  self.args.llvm_build_variant, [])
+                lldb_test_targets.append("check-lldb-swift")
+            else:
+                lldb_test_targets.append("check-lldb")
 
             print("--- Running LLDB tests ---")
-            self.build_with_cmake(['lldb-test-deps'],
+            self.test_with_cmake(None, lldb_test_targets,
                                   self.args.llvm_build_variant, [])
 
             llvm_lit = os.path.join(self.build_dir, 'bin', 'llvm-lit')

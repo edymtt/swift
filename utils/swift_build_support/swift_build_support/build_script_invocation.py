@@ -502,6 +502,12 @@ class BuildScriptInvocation(object):
             impl_args += ["--lldb-test-swift-compatibility",
                           args.lldb_test_swift_compatibility]
 
+        if args.lldb_extra_cmake_args:
+            impl_args += [
+                "--lldb-extra-cmake-args=%s" % ' '.join(
+                    shlex.quote(opt) for opt in args.lldb_extra_cmake_args)
+            ]
+
         if args.coverage_db:
             impl_args += [
                 "--coverage-db=%s" %
