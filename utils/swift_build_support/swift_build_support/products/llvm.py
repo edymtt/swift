@@ -646,7 +646,7 @@ class LLVM(cmake_product.CMakeProduct):
                     llvm_cmake_options.define(cmake_var + ':STRING', str(val))
 
             # Extra arguments
-            llvm_cmake_options.extend_raw(self.args.lldb_cmake_options)
+            #llvm_cmake_options.extend_raw(self.args.lldb_cmake_options)
 
             # Pick the right cache.
             if system() == 'Darwin':
