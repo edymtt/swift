@@ -33,6 +33,51 @@ class CMakeOptions(object):
         if initial_options is not None:
             self.extend(initial_options)
 
+    @staticmethod
+    def _parse_definition(option):
+        """Parse a -D style cmake option.
+
+        Return the (name, value) pair of the cache entry defined by the
+        given option, or None if the option does not define one.
+        """
+        if not option.startswith('-D'):
+            return None
+        name, sep, value = option[len('-D'):].partition('=')
+        if not sep:
+            return None
+        return (name, value)
+
+    def _is_definition_of(self, option, var):
+        """Return True if the given option is a definition of `var`.
+
+        A definition of the untyped variable `FOO` matches both
+        `-DFOO=<value>` and `-DFOO:TYPE=<value>` style options.  A
+        definition of the typed variable `FOO:TYPE` only matches options
+        defining that exact variable and type.
+        """
+        parsed = self._parse_definition(option)
+        if parsed is None:
+            return False
+        name = parsed[0]
+        if name == var:
+            return True
+        return ':' not in var and name.split(':')[0] == var
+
+    def get(self, var):
+        """Return the value assigned to the given cmake cache entry.
+
+        opts.define("FOO", "BAR")       # opts.get("FOO") == "BAR"
+        opts.define("FLAG:BOOL", True)  # opts.get("FLAG") == "TRUE"
+
+        If the entry has been defined multiple times, the value of the
+        most recent definition is returned.  A KeyError is raised if the
+        entry is not defined.
+        """
+        for option in reversed(self._options):
+            if self._is_definition_of(option, var):
+                return self._parse_definition(option)[1]
+        raise KeyError(var)
+
     def define(self, var, value):
         """Utility to define cmake options in this object.
 
@@ -47,6 +92,11 @@ class CMakeOptions(object):
             raise ValueError('define: invalid value for key %s: %s (%s)' %
                              (var, value, type(value)))
         self._options.append('-D%s=%s' % (var, value))
+
+    def define_or_replace(self, var, value):
+        self._options = [option for option in self._options
+                         if not self._is_definition_of(option, var)]
+        self.define(var, value)
 
     def undefine(self, var):
         """Utility to undefine cmake options in this object.

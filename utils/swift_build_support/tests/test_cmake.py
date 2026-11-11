@@ -494,6 +494,69 @@ class CMakeOptionsTestCase(unittest.TestCase):
             '-DOPT16=',
             '-DOPT17:PATH=foo'])
 
+    def test_get(self):
+        options = CMakeOptions()
+
+        # Retrieving an undefined option raises a KeyError.
+        self.assertRaises(KeyError, options.get, 'LIT_FLAGS')
+
+        options.define('LIT_FLAGS', '-v -j 12')
+        self.assertEqual(options.get('LIT_FLAGS'), '-v -j 12')
+
+        # Typed definitions are retrievable with or without the type.
+        options.define('CMAKE_C_COMPILER:PATH', '/path/to/clang')
+        self.assertEqual(options.get('CMAKE_C_COMPILER'), '/path/to/clang')
+        self.assertEqual(options.get('CMAKE_C_COMPILER:PATH'),
+                         '/path/to/clang')
+
+        # The most recent definition wins.
+        options.define('LIT_FLAGS', '-v -j 16')
+        self.assertEqual(options.get('LIT_FLAGS'), '-v -j 16')
+
+        # Values containing '=' are handled correctly.
+        options.define('OPT_WITH_EQUALS', 'a=b')
+        self.assertEqual(options.get('OPT_WITH_EQUALS'), 'a=b')
+
+        # Variables with common prefixes are not confused.
+        self.assertRaises(KeyError, options.get, 'LIT_FLAGS_EXTRA')
+
+    def test_define_or_replace(self):
+        options = CMakeOptions()
+        options.define('LIT_FLAGS', '-v -j 12')
+        options.define('SWIFT_STDLIB', 'ON')
+        options.define('OTHER', 'value')
+
+        # An undefined option is simply defined.
+        options.define_or_replace('NEW_OPT', 'new_value')
+        self.assertEqual(options.get('NEW_OPT'), 'new_value')
+
+        # ... and an already defined option is replaced, leaving other
+        # options untouched.
+        lit_flags = options.get('LIT_FLAGS')
+        lit_flags += ' --xunit-xml-output=results.xml'
+        options.define_or_replace('LIT_FLAGS', lit_flags)
+
+        self.assertEqual(options.get('LIT_FLAGS'),
+                         '-v -j 12 --xunit-xml-output=results.xml')
+        self.assertEqual(options.get('SWIFT_STDLIB'), 'ON')
+        self.assertEqual(options.get('OTHER'), 'value')
+        self.assertEqual(list(options), [
+            '-DSWIFT_STDLIB=ON',
+            '-DOTHER=value',
+            '-DNEW_OPT=new_value',
+            '-DLIT_FLAGS=-v -j 12 --xunit-xml-output=results.xml'])
+
+        # Previous definitions of the same variable (typed or not) are
+        # removed, so the option is not defined twice.
+        options.define('FLAGS:STRING', 'a')
+        options.define('FLAGS', 'b')
+        self.assertEqual(options.get('FLAGS'), 'b')
+        options.define_or_replace('FLAGS', 'c')
+        self.assertEqual(list(options).count('-DFLAGS=c'), 1)
+        self.assertEqual(options.get('FLAGS'), 'c')
+        self.assertNotIn('-DFLAGS:STRING=a', options)
+        self.assertNotIn('-DFLAGS=b', options)
+
     def test_operations(self):
 
         options1 = CMakeOptions()
