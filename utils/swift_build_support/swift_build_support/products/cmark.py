@@ -105,7 +105,8 @@ class CMark(cmake_product.CMakeProduct):
         Whether or not this product should be installed with the given
         arguments.
         """
-        return self.args.install_all
+        return self.args.install_all or (
+            self.args.build_swift and self.args.unified_llvm_build)
 
     def install(self, host_target):
         """
