@@ -663,12 +663,25 @@ class LLVM(cmake_product.CMakeProduct):
                     llvm_cmake_options.define(cmake_var + ':STRING', str(val))
 
 
-            # TODO Pick the right cache.
+            # TODO Pick the right cache, or dump the values here
             # if system() == 'Darwin':
             #     cmake_cache = "Apple-lldb-macOS.cmake"
             # else:
             #     cmake_cache = "Apple-lldb-Linux.cmake"
+            # TODO: should this be set for the entire LLVM build?
+            #llvm_cmake_options.define("LLVM_ENABLE_EXPORTED_SYMBOLS_IN_EXECUTABLES", "OFF")
 
+            llvm_cmake_options.define("LIBCXX_ENABLE_SHARED", "OFF")
+            llvm_cmake_options.define("LIBCXX_ENABLE_STATIC", "OFF")
+            
+            llvm_cmake_options.define("LLDB_BUILD_FRAMEWORK", "ON")
+            llvm_cmake_options.define("LLDB_NO_INSTALL_DEFAULT_RPATH", "ON")
+            llvm_cmake_options.define("LLDB_SKIP_STRIP", "ON")
+
+            llvm_cmake_options.define("LLDB_FRAMEWORK_INSTALL_DIR", "/Applications/Xcode.app/Contents/SharedFrameworks")
+            llvm_cmake_options.define("LLDB_DEBUGINFO_INSTALL_PREFIX", "/debuginfo")
+
+            llvm_cmake_options.define("LLVM_DISTRIBUTION_COMPONENTS", "lldb;liblldb;lldb-argdumper;lldb-dap;lldb-mcp;darwin-debug;debugserver;repl_swift;lldbPluginScriptInterpreterPython")
             #lldb_source_dir = os.path.join(self.source_dir, 'lldb')
             #llvm_cmake_options.extend_raw([
             #    '-C', os.path.join(lldb_source_dir, 'cmake/caches', cmake_cache)
@@ -678,6 +691,7 @@ class LLVM(cmake_product.CMakeProduct):
             add_lldb_bool('LLDB_ASSERTIONS', 'lldb_assertions')
 
             # LLDB_SWIFTC:PATH=${SWIFTC_BIN}
+            # TODO amend the following patsh since they are wrong
             # We assume swiftc is in the same build directory if build_swift
             if self.args.build_swift:
                 swift_build_dir = os.path.join(self.build_dir, '../swift-' + host_target)
