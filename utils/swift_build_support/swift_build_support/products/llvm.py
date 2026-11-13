@@ -662,20 +662,6 @@ class LLVM(cmake_product.CMakeProduct):
                 if val is not None and str(val) != "":
                     llvm_cmake_options.define(cmake_var + ':STRING', str(val))
 
-            # Extra arguments
-            additional_lldb_lit_args = f' --xunit-xml-output={os.path.join(self.build_dir, "lldb-test-results", "results.xml")}'
-            is_asan = self.args.enable_asan or \
-                (self.args.lldb_extra_cmake_args and
-                 any("Address" in arg for arg in self.args.lldb_extra_cmake_args))
-            if system() == "Darwin" and is_asan:
-                physicalcpu = int(shell.capture(["sysctl", "-n", "hw.physicalcpu"]).strip())
-                candidate_job_number= int(physicalcpu/3)
-                if candidate_job_number < 1:
-                    candidate_job_number = 1
-                if candidate_job_number < self.args.lit_jobs:
-                    candidate_job_number = self.args.lit_jobs 
-                additional_lldb_lit_args += f" -j {candidate_job_number}"
-            llvm_cmake_options.define_or_append("LLVM_LIT_ARGS", additional_lldb_lit_args)
 
             # TODO Pick the right cache.
             # if system() == 'Darwin':
@@ -927,6 +913,22 @@ class LLVM(cmake_product.CMakeProduct):
 
         # 2. LLDB tests
         if self.args.build_lldb and self.args.test:
+            # Extra arguments
+            additional_lldb_lit_args = f'--xunit-xml-output={os.path.join(self.build_dir, "lldb-test-results", "results.xml")}'
+            is_asan = self.args.enable_asan or \
+                (self.args.lldb_extra_cmake_args and
+                 any("Address" in arg for arg in self.args.lldb_extra_cmake_args))
+            if system() == "Darwin" and is_asan:
+                physicalcpu = int(shell.capture(["sysctl", "-n", "hw.physicalcpu"]).strip())
+                candidate_job_number= int(physicalcpu/3)
+                if candidate_job_number < 1:
+                    candidate_job_number = 1
+                if candidate_job_number < self.args.lit_jobs:
+                    candidate_job_number = self.args.lit_jobs 
+                additional_lldb_lit_args += f" -j {candidate_job_number}"
+            
+            additional_lldb_lit_args += " " + os.environ.get('LIT_OPTS', "")
+
             lldb_test_targets = []
             if getattr(self.args, 'lldb_test_swift_only', False):
                 lldb_test_targets.append("check-lldb-swift")
@@ -935,7 +937,7 @@ class LLVM(cmake_product.CMakeProduct):
 
             #print("--- Running LLDB tests ---")
             self.test_with_cmake(None, lldb_test_targets,
-                                  self.args.llvm_build_variant, [])
+                                  self.args.llvm_build_variant, [], {"LIT_OPTS": additional_lldb_lit_args})
 
     def should_install(self, host_target):
         """should_install() -> Bool
