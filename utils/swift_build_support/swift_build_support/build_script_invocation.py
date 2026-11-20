@@ -352,7 +352,9 @@ class BuildScriptInvocation(object):
         if not args.build_clang_tools_extra:
             impl_args += ["--skip-build-clang-tools-extra"]
 
-        if not args.test and not args.long_test and not args.stress_test:
+        if not args.test_swift or (
+                not args.test and not args.long_test and
+                not args.stress_test):
             impl_args += ["--skip-test-swift"]
         if not args.test:
             impl_args += [
@@ -510,10 +512,12 @@ class BuildScriptInvocation(object):
                 os.path.abspath(args.coverage_db)
             ]
 
+        if args.install_swift:
+            impl_args += ["--install-swift"]
+
         # '--install-swiftsyntax' is a legacy form of 'swift-syntax-lib'
         # install component.
-        if (args.install_swiftsyntax and
-                '--install-swift' not in args.build_script_impl_args):
+        if args.install_swiftsyntax and not args.install_swift:
             impl_args += [
                 "--install-swift",
                 "--swift-install-components=swift-syntax-lib"

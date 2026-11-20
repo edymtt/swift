@@ -114,6 +114,7 @@ EXPECTED_DEFAULTS = {
     'sourcekitlsp_verify_generated_files': False,
     'sourcekitlsp_lint': False,
     'install_llvm': False,
+    'install_swift': False,
     'install_static_linux_config': False,
     'install_swiftpm': False,
     'install_swiftsyntax': False,
@@ -348,6 +349,7 @@ EXPECTED_DEFAULTS = {
     'test_xros_simulator': False,
     'test_playgroundsupport': True,
     'test_cmark': False,
+    'test_swift': True,
     'test_swiftpm': False,
     'test_foundation': False,
     'test_swift_driver': False,
@@ -499,14 +501,6 @@ class IgnoreOption(_BaseOption):
     """Option that should be ignored when generating tests. Instead a test
     should be written manually as the behavior cannot or should not be auto-
     generated.
-    """
-
-    pass
-
-
-class BuildScriptImplOption(_BaseOption):
-    """Option that gets forwarded to build-script-impl by migration.py and is
-    only listed for disambiguation by argparse.
     """
 
     pass
@@ -717,6 +711,7 @@ EXPECTED_OPTIONS = [
     EnableOption('--sourcekit-lsp-lint',
                  dest='sourcekitlsp_lint'),
     EnableOption('--install-llvm', dest='install_llvm'),
+    EnableOption('--install-swift', dest='install_swift'),
     EnableOption('--install-static-linux-config', dest='install_static_linux_config'),
     EnableOption('--install-swiftsyntax', dest='install_swiftsyntax'),
     EnableOption('--install-swift-testing', dest='install_swift_testing'),
@@ -815,6 +810,7 @@ EXPECTED_OPTIONS = [
     DisableOption('--skip-test-playgroundsupport',
                   dest='test_playgroundsupport'),
     DisableOption('--skip-test-cmark', dest='test_cmark'),
+    DisableOption('--skip-test-swift', dest='test_swift'),
     DisableOption('--skip-test-swiftpm', dest='test_swiftpm'),
     DisableOption('--skip-test-foundation', dest='test_foundation'),
     DisableOption('--skip-test-swift-driver', dest='test_swift_driver'),
@@ -942,10 +938,6 @@ EXPECTED_OPTIONS = [
     UnsupportedOption('--skip-test-optimize-for-size'),
     UnsupportedOption('--skip-test-optimize-none-with-implicit-dynamic'),
     UnsupportedOption('--skip-test-optimized'),
-
-    # Options forwarded to build-script-impl
-    BuildScriptImplOption('--skip-test-swift', dest='impl_skip_test_swift'),
-    BuildScriptImplOption('--install-swift', dest='impl_install_swift'),
 
     # NOTE: LTO flag is a special case that acts both as an option and has
     # valid choices

@@ -129,23 +129,6 @@ class TestMigrateParseArgs(unittest.TestCase):
 
         self.assertEqual(args, expected)
 
-    def test_forward_impl_args(self):
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--skip-test-swift',
-                            dest='impl_skip_test_swift',
-                            action='store_true')
-        parser.add_argument('--install-swift',
-                            dest='impl_install_swift',
-                            action='store_true')
-
-        args = migration.parse_args(
-            parser, ['--skip-test-swift', '--install-swift'])
-
-        expected = argparse.Namespace(
-            build_script_impl_args=['--skip-test-swift', '--install-swift'])
-
-        self.assertEqual(args, expected)
-
 
 class TestMigrationCheckImplArgs(unittest.TestCase):
 

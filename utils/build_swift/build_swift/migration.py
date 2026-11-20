@@ -78,26 +78,6 @@ def migrate_swift_sdks(args):
 
 # -----------------------------------------------------------------------------
 
-def _process_disambiguation_arguments(args, unknown_args):
-    """These arguments are only listed in the driver arguments to stop argparse
-    from auto expanding arguments like --install-swift to the known argument
-    --install-swiftevolve. Remove them from args and add them to unknown_args
-    again.
-    """
-
-    if hasattr(args, 'impl_skip_test_swift'):
-        if args.impl_skip_test_swift:
-            unknown_args.append('--skip-test-swift')
-        del args.impl_skip_test_swift
-
-    if hasattr(args, 'impl_install_swift'):
-        if args.impl_install_swift:
-            unknown_args.append('--install-swift')
-        del args.impl_install_swift
-
-    return args, unknown_args
-
-
 def parse_args(parser: ArgumentParser, args, namespace=None):
     """Parses a given argument list with the given argparse.ArgumentParser.
 
@@ -108,7 +88,6 @@ def parse_args(parser: ArgumentParser, args, namespace=None):
 
     args = [arg for arg in args if arg != '--']
     args, unknown_args = parser.parse_known_args(args, namespace)
-    args, unknown_args = _process_disambiguation_arguments(args, unknown_args)
 
     args.build_script_impl_args = unknown_args
 

@@ -800,6 +800,9 @@ def create_argument_parser():
     option('--install-llvm', toggle_true,
            help='install llvm')
 
+    option('--install-swift', toggle_true,
+           help='install swift')
+
     option(['--install-back-deploy-concurrency'],
            toggle_true('install_backdeployconcurrency'),
            help='install back-deployment support libraries for concurrency')
@@ -1429,6 +1432,9 @@ def create_argument_parser():
     # -------------------------------------------------------------------------
     in_group('Skip testing specified targets')
 
+    option('--skip-test-swift', toggle_false('test_swift'),
+           help='skip testing swift')
+
     option('--skip-test-ios',
            toggle_false('test_ios'),
            help='skip testing all iOS targets. Equivalent to specifying both '
@@ -1713,14 +1719,6 @@ def create_argument_parser():
            help='skip building zlib')
     option('--skip-build-curl', toggle_false('build_curl'),
            help='skip building curl')
-
-    # We need to list --skip-test-swift explicitly because otherwise argparse
-    # will auto-expand arguments like --skip-test-swift to the only known
-    # argument --skip-test-swiftevolve.
-    # These arguments are forwarded to impl_args in migration.py
-
-    option('--install-swift', toggle_true('impl_install_swift'))
-    option('--skip-test-swift', toggle_true('impl_skip_test_swift'))
 
     # -------------------------------------------------------------------------
     return builder.build()
