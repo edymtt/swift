@@ -27,6 +27,8 @@ from ..cmake import CMakeOptions
 from ..host_specific_configuration \
     import HostSpecificConfiguration
 
+from build_swift.build_swift.constants import SWIFT_SOURCE_ROOT
+
 
 class LLVM(cmake_product.CMakeProduct):
 
@@ -448,7 +450,7 @@ class LLVM(cmake_product.CMakeProduct):
             llvm_cmake_options.define('LLVM_EXTERNAL_PROJECTS',
                                       'swift')
             llvm_cmake_options.define('LLVM_EXTERNAL_SWIFT_SOURCE_DIR',
-                                      os.path.join(self.source_dir, '../../swift'))
+                                      os.path.join(SWIFT_SOURCE_ROOT, 'swift'))
 
             def _get_cmark_install_dir():
                 # TODO: does it make sense to get the real class
